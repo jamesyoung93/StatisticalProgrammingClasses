@@ -1,0 +1,288 @@
+---
+title: "Homework 6"
+author: "James Young"
+date: "7/5/2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+There are six exercises below. You are required to provide solutions for at least four of the five. You are required to solve at least one exercise in R, and at least one in SAS. You are required to provide five solutions, each solution will be worth 10 points. Thus, you may choose to provide both R and SAS solutions for a single exercise, or you may solve five of the sixth problems, mixing the languages as you wish.
+
+
+
+## Reuse
+
+For many of these exercises, you may be able to reuse functions written in prior homework. Define those functions here. I'm also including data vectors that can be used in some exercises.
+
+```{r}
+CaloriesPerServingMean <- c(268.1, 271.1, 280.9, 294.7, 285.6, 288.6, 384.4)
+CaloriesPerServingSD <- c(124.8, 124.2, 116.2, 117.7, 118.3, 122.0, 168.3)
+```
+
+# Exercise 1 Please Grade
+
+Write a general Cohen $d$ function to be more generally useful, accepting a wider range of arguments. For convenience, name this `general.d`.
+
+The new function should accept two parameters, `m`, `s` 
+
+In your function, check for these condititions:
+
+* If `m` is of length 1 and `s` is length 1, then simply divide `m/s` - that is, proceed with the calculations as if `m = %Diff` and `s = CV`.
+
+* If `m` is of length 2, then calculate the difference and proceed with the calculations.
+* If `m` is of length greater than 2, find the difference between the min and max of `m` and proceed with the calculations.
+
+* If s is of length greater than 1 calculate pooled sd as
+
+$$
+s^2_{pooled} = \sqrt{\frac{\sum_i^k s_i^2}{k}}
+$$
+```{r}
+
+general.d <-function(m,s){
+m.len = length(m)
+s.len = length(s)
+spooled = (((sum(s**2))/2)^(1/2))
+      if (m.len > 2){print((abs(min(m)-max(m)))/spooled)
+      }
+       else if (m.len <- 2) { print((max(m)-min(m))/s)
+      } else if (m.len <- 1)  {
+               print(m / s)
+      } else {print(m/s)}
+}
+  
+
+
+```
+
+Test your function with the three cases:
+```{r}
+min(CaloriesPerServingMean)-max(CaloriesPerServingMean)
+```
+
+
+
+#### 1936 Effect Size
+Use just the mean from 1936 and the associated standard deviation
+
+```{r,eval=FALSE}
+general.d(268.1, 124.8)
+
+```
+
+#### 1936 versus 2006
+This should duplicate results from prior exercises.
+
+```{r,eval=FALSE}
+general.d(c(268.1,384.4), c(124.8,168.3))
+#first calc is diff second calc is cohen.d
+```
+
+#### All of Calories per Serving.
+Use the vectors from the Reuse chunk.
+
+```{r,eval=FALSE}
+general.d(CaloriesPerServingMean,CaloriesPerServingSD)
+```
+
+Are these three scenarios sufficient to test every path through `general.d`?
+
+Yes.
+
+
+# Exercise 3 Please Grade
+
+Calculate a cumulative probability value from the normal pdf, using the Newton-Cotes formula
+
+$$
+\int _{x_0} ^{x_n} f(x) dx \approx \sum _{i=0} ^n h f(x_i)
+$$
+
+where $x_1, ..., x_n$ are a sequence of evenly spaced numbers from $-2 \dots 2$, with $x_i = x_0 + h i$, $n$ is the number of $x_i$ in the sequence and step size $h = (x_n -x_0)/n$.
+
+We will calculate this integral by calculating successive approximations of $f = L(x;0,1)$ `= norm.pdf` over series of $x$ with increasingly smaller step sizes.
+
+## Part a.
+Calculate $L_0$ by summing over $L(\bf{X_0})$, where $X_0$ is a series from $x_0=-2, \dots, x_n=2$ incremented by $h_0=0.1$. Multiply this sum by $h_0$ for an approximate $\int _{x_0} ^{x_n} L(x) dx$
+
+Think of this as the sum of a series of rectangles, each $h$ wide and a height given by the normal pdf.
+
+```{r}
+x.seq = data.frame(seq(from=(-2), to=(2), by = 0.1))
+x.sum = sum(abs(x.seq))
+x.sum = x.sum * 0.1
+x.sum
+
+
+
+```
+
+
+## Part b. 
+Create a second series $X_1$ by setting $h_1 = h_0/2$. Compute $L_1$ from this series as in part a. Let $i=1$
+You now have the are of twice as many rectangles as part a, but each is half as wide.
+
+```{r}
+x.seq = data.frame(seq(from=(-2), to=(2), by = 0.05))
+x.sum = sum(abs(x.seq))
+x.sum = x.sum * 0.05
+x.sum
+
+
+```
+
+
+## Part c.
+Compute $\delta=|L_i - L_{i-1}|$. If $\delta < 0.0001$, your sequence of iterations has converged on a solution for $L$. Finish with Part d. Otherwise, increment $i$, let $h_i = h_{i-1}/2$. Create the next series $X_i$ and compute the next $L_i$.
+
+Hint: code this first as a for loop of a small number of $i$ until you know your code will converge toward a solution.
+
+```{r}
+i = 1
+h.3 = 0.1
+for(i in 1:20){
+  h.3 = h.3/2
+  x.seq = data.frame(seq(from=(-2), to=(2), by = h.3))
+  
+  x.sum3 = sum(x.seq)
+  x.by.h3 = x.sum3 * h.3
+  
+  
+  i=i+1
+  
+}
+
+
+```
+
+# Part d
+Report $i$, $n$ and $h$. 
+```{r}
+print(i)
+n = nrow(x.seq)
+print(n)
+h = h.3
+print(h)
+```
+
+To check your results, compare your final $L_i$ to
+```{r}
+L_i = x.by.h3
+
+L_i - pnorm(-2, lower.tail = TRUE)-pnorm(-2, lower.tail = TRUE)
+```
+Is your estimate within $0.0001$ of this value?
+No, my estimate is not within 0.0001 of this value.
+
+You might find it useful to produce staircase plots for the first 2-4 iterations (plot $L_i$ vs $X_i$ on one graph). You might also find it interesting to plot $\delta$ or $L$ versus $i$ or $h$. You can create vectors to hold the intermediate steps - 10 iterations should be enough. How many iterations might it take to get within 0.000001 of the expected value from R?
+
+
+
+# Exercise 4 Please Grade
+
+## Part a.
+
+Write a function to compute mean, standard deviation, skewness and kurtosis from a single vector of numeric values. You can use the built-in mean function, but must use one (and only one) for loop to compute the rest. Be sure to include a check for missing values. Note that computationally efficient implementations of moments calculations take advantage of $(Y_i-\bar{Y})^4 = (Y_i-\bar{Y}) \times (Y_i-\bar{Y})^3$, etc.
+
+
+See https://www.itl.nist.gov/div898/handbook/eda/section3/eda35b.htm for formula for skewness and kurtosis. This reference gives several definitions for both skewness and kurtosis, you only need to implement one formula for each. Note that for computing skewness and kurtosis, standard deviation is computed using $N$ as a divisor, not $N-1$.
+
+
+Your function should return a list with `Mean`, `SD`, `Skewness` and `Kurtosis`. If you use IML, you will need to implement this as a subroutie and use call by reference; include these variables in parameter list.
+
+```{r}
+data = rnorm(1000, mean=10, sd=1)
+
+summarydata= function(data){
+  data.mean = mean(data, na.rm = TRUE)
+  data = data[!is.na(data)]
+  data.len = length(data)
+  
+    data.sd.nu = 0
+  data.sk.nu = 0
+  data.kur.nu = 0
+  
+  
+  for(i in 1:data.len){
+    data.sd.nu = ((data[[i]]-data.mean)**2)+data.sd.nu
+    data.sk.nu = ((data[[i]]-data.mean)**3)+data.sk.nu
+    data.kur.nu = ((data[[i]]-data.mean)**4)+data.kur.nu
+  }
+  
+  data.sd = sqrt(data.sd.nu/(data.len-1))
+  data.sk = sqrt(data.sk.nu/data.len)/(data.sd**3)
+  data.kur = sqrt(data.kur.nu/data.len)/(data.sd**4)
+  print(data.kur) 
+  print(data.mean)
+  print(data.sd)
+  print(data.sk)
+   
+}
+
+summarydata(data)
+```
+
+## Part b.
+Test your function by computing moments for `Price` from `pumpkins.csv`, for `ELO` from `elo.csv` or the combine observations from `SiRstvt`. If find that `ELO` shows both skewness and kurtosis,  `Price` is kurtotic but not skewed, while `SiRstvt` are approximately normal.
+
+```{r}
+setwd("C://data/")
+pumpkins <- read.csv("pumpkins.csv")
+x = summarydata(pumpkins$Price)
+x 
+
+
+```
+
+If you wish, compare your function results with the `skewness` and `kurtosis` in the `moments` package. This package also implements test of significance for skewness and kurtosis.
+
+```{r,eval=FALSE}
+
+library(moments)
+kurtosis(pumpkins$Price)
+
+```
+
+
+
+# Exercise 6 Please Grade
+
+Write an improved Poisson pmf function, call this function `smart.pois`, using the same parameters `x` and `lamba` as before, but check $x$ for the following conditions.
+1. If $x$ is negative, return a missing value (`NA`, `.`).
+2. If $x$ is non-integer, truncate $x$ then proceed.
+3. If $x$ is too large for the factorial function, return the smallest possible numeric value for your machine. What $x$ is too large? You could test the return value of `factorial` against `Inf`.
+
+You can reuse previously tested code writing this function as a wrapper for a previously written `pois.pmf` and call that function only after testing the for specified conditions.
+
+Test this function by repeating the plots from Homework 4, Ex 4.  How is the function different than `dpois`?
+
+**Warning** You may not be able to call this new function exactly as in the last exercise (Hint - what are the rules for conditions in `if` statements?). Instead, you might need to create a matrix or data table and use `apply` functions, or write a loop for visit each element in a vector of `x`.
+
+```{r}
+seq =seq(-5,5,by=0.1)
+
+pois.pmf = function(x){
+  for(i in 1:x)
+  if (i>170) {i = 170
+  } else if ( i < 170){i=i
+  }
+  else if (i<0){print(NaN)
+    } else {
+    i = trunc(i)}
+  ( 0.36787944117*(-1)**(x))/(factorial(x))
+
+
+}
+
+```
+
+
+```{r}
+pois.pmf(seq)
+
+```
+
+
+

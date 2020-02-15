@@ -1,0 +1,301 @@
+---
+title: "Homework 7 - Data Manipulation"
+author: "James Young"
+date: "07/11/2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+There are six exercises below. You are required to provide solutions for at least four of the five. You are required to solve at least one exercise in R, and at least one in SAS. You are required to provide five solutions, each solution will be worth 10 points. Thus, you may choose to provide both R and SAS solutions for a single exercise, or you may solve five of the sixth problems, mixing the languages as you wish.
+
+If you choose SAS for an exercise, you may use `IML`, `DATA` operations or `PROC SQL` at your discretion.
+
+*Warning* I will continue restricting the use of external libraries in R, particularly `tidyverse` libraries. You may choose to use `ggplot2`, but take care that the plots you produce are at least as readable as the equivalent plots in base R. You will be allowed to use whatever libraries tickle your fancy in the midterm and final projects.
+
+## Reuse
+
+For many of these exercises, you may be able to reuse functions written in prior homework. Define those functions here.
+
+```{r}
+required.replicates <- function (CV, Diff,alpha, beta) {
+  2 * ((CV/Diff)**2) * (((1-(alpha/2))+(1-beta)))**2
+}
+
+```
+
+# Exercise 1 Please Grade. 
+
+### Part a.
+
+Repeat the table from Homework 5, Exercise 2. The table will contain 30 rows, each corresponding to a unique combination of CV from $8, 12, ..., 28$ and Diff from $5,10, ... , 25$. However, for this exercise you only need to calculate one column for required replicates ($\alpha=0.05$ and $\beta=0.2$)
+
+Define the table in the space below. *Do not print this table*.
+
+```{r}
+A = seq(8, 28,by=4)
+B = seq(5, 25,by=5)
+
+
+d1 <- expand.grid(CV = B, Diff = A, KEEP.OUT.ATTRS = FALSE)
+d1$RequiredReps = required.replicates(d1$CV, d1$Diff, 0.05, 0.2)
+```
+
+### Part b.
+
+Create two subset tables, one that contains the combinations of CV and Diff that require the five largest number of replicates and one the contains the combinations of CV and Diff the five smallest number of replicates. You can determine the subset by ranking or sorting by required replicates. You can add a rank column to your table if you wish. Call one table `LargestFive` and one table `SmallestFive`.
+
+```{r}
+#rank order the required reps
+order.scores <- order(d1$RequiredReps)
+d1$rank[order.scores] <- 1:nrow(d1)
+#subset based on rank order
+SmallestFive <- subset(d1, rank < 6)
+LargestFive <-subset(d1, rank > 25)
+```
+
+### Part c.
+
+Print `LargestFive` sorted by required replicates in descending order, and print `SmallestFive` in ascending order.
+
+```{r}
+LargestFive <- LargestFive[order(-LargestFive$RequiredReps),] 
+SmallestFive <- SmallestFive[order(SmallestFive$RequiredReps),] 
+#First table
+LargestFive
+#second table
+SmallestFive
+```
+
+
+# Exercise 2 Please Grade
+
+### Part a
+
+Go to http://www.itl.nist.gov/div898/strd/anova/SiRstv.html and use the data listed under `Data File in Table Format` (https://www.itl.nist.gov/div898/strd/anova/SiRstvt.dat). You may reuse the file from Homework 6. Load the data into a table below.
+
+```{r}
+NIST <- read.csv("C://data/NIST.csv", header=T, stringsAsFactors = F)
+
+
+```
+
+### Part b
+
+Reshape or transpose this table from the wide format to the long format. Make sure the resulting table has two columns - `Resistance` and `Instrument`.
+
+```{r}
+#manipulate data frame into long shape. Had to add special first column to csv whiche denotes reps in order to get desired results. CSV file included in upload. 
+tmydf = setNames(data.frame(t(NIST[,-1])), NIST[,1])
+tmydf$Instrument <- rownames(tmydf)
+tmydf <- as.data.frame(tmydf)
+NIST_Long <- reshape(tmydf, 
+    direction="long",
+    varying=1:5,
+    idvar='Instrument',
+    
+    v.names="Resistance")
+NIST_Long$time<-NULL
+NIST_Long[order(NIST_Long$Instrument),]
+
+```
+
+### Part c
+
+To confirm that the table was reshaped correctly, use `aggregate` or `tapply` to calculate mean `Resistance` grouped by `Instrument` from the long table, and use `apply` or `colMeans` to calculate column means from the wide table. Print and compare the results.
+
+```{r}
+aggregate(NIST_Long$Resistance, by=NIST_Long["Instrument"], FUN=mean, na.rm=TRUE)
+
+colMeans(NIST[2:6])
+```
+The means taken from the original and the reshaped are the same.
+
+Note that the reshaped table should be equivalent to the file linked under 'Data File in Two-Column Format'.
+
+
+# Exercise 5 Please Grade
+
+### Background
+
+I'm working on software that produces a repeated measures analysis. To test my code, I use published data and compare results. For one analysis, I used data from **Contemporary Statistical Models for the Plant and Soil Sciences**, Oliver Schabenberger and Francis J. Pierce, 2001. These data are measurements of the diameter of individual apples from selected apple trees. 
+
+## Part a.
+Download the `AppleData.csv` if you choose R, the SAS data is included in the SAS template. Note the file include comments for the data; you may need to specify comment character in import. *Do not print this table*.
+
+To simplify this exercise, create a subset of the `AppleData` including only trees number 3, 7 and 10.
+
+```{r}
+AppleData <- read.csv("C://data/AppleData.csv", comment.char = "#")
+AppleData <- subset(AppleData, tree ==3 | tree == 7 | tree == 10)
+```
+
+## Part b.
+Reshape or transpose this data from the long form to the wide form. Call this data `AppleWide`. This table should have one column for `Tree`, one column for `Apple` and six columns, `diam.1` - `diam.6`. The values in the time columns come from `diam` in `AppleData`.
+
+```{r}
+#Going from long data to wide data
+AppleWide = reshape(AppleData,
+                    timevar = "time",
+                    idvar = c("tree","apple"),
+                    direction = "wide")
+print(AppleWide)
+
+```
+
+## Part c.
+To confirm that you've reshaped correctly, print column means for the wide data set and use an aggregate or apply function to compute `time` means for the long format.
+
+```{r}
+apply(AppleWide,2,mean)
+
+aggregate(AppleData$diam, by=AppleData["time"], FUN=mean, na.rm=TRUE)
+```
+The means from the original and the reshaped are the same.
+
+
+## Part d.
+I choose this example for a test case because it shows a case where the best repeated measures model is an auto-regressive model - each measure is correlated with the preceding measure. We can estimate the degree of using the following R code. You don't need to evaluate this code for this exercise; it's provided as a motivation for reshaping the data. 
+
+```{r,eval=FALSE}
+#Following the code, a nice correlation table is output.
+mult.lm <- lm(cbind(diam.1, diam.2, diam.3, diam.4, diam.5, diam.6) ~ tree, data=AppleWide)
+mult.manova <- manova(mult.lm)
+print(cov2cor(estVar(mult.lm)))
+```
+
+# Exercise 6 Please Grade
+
+This is an exercise in computing the Wilcoxon Signed Rank test. We will be using an example from NIST (`NATR332.DAT`). See https://www.itl.nist.gov/div898/software/dataplot/refman1/auxillar/signrank.htm .
+
+The data are provided:
+```{r}
+NATR332.DAT <- data.frame(
+  Y1 = c(146,141,135,142,140,143,138,137,142,136),
+  Y2 = c(141,143,139,139,140,141,138,140,142,138)
+)
+```
+
+## Part a.
+Add a column `Difference` that is the difference between `Y1` and `Y2`. For further analysis, exclude any rows where the difference is 0.
+
+Next add add the column `Rank`, which will be the rank of the absolute value of `Difference`.
+```{r}
+NATR332.DAT$Difference = NATR332.DAT$Y1 - NATR332.DAT$Y2
+#Drop 0's
+NATR332.DAT2 = subset(NATR332.DAT, 0 != Difference)
+
+#rank difference
+diffrank = rank(abs(NATR332.DAT2$Difference))
+NATR332.DAT2$Rank = diffrank
+
+
+
+print(NATR332.DAT2)
+```
+
+## Part c.
+Add the column `SignedRank` by applying the sign (+ or -) of `Difference`, to to `Rank` (that is, if `Difference` is < 0, then `SignedRank` is `-Rank`, otherwise `SignedRank` is `Rank`).
+
+```{r}
+
+
+for(i in 1:length(NATR332.DAT2$Rank)){
+  if(NATR332.DAT2$Difference[i]<0){
+    NATR332.DAT2$SignedRank[i] = NATR332.DAT2$Rank[i]*(-1)
+  }else{
+    NATR332.DAT2$SignedRank[i] = NATR332.DAT2$Rank[i]
+  }
+}
+
+
+NATR332.DAT2
+
+```
+
+## Part d.
+Compute the sum of the positive ranks, and the absolute value of the sum of the negative ranks. Let $W$ be the minimum of these two sums. Print $W$.
+
+```{r}
+positive.sum = 0
+positive.val = 0
+negative.sum = 0
+negative.val = 0
+for(i in 1:length(NATR332.DAT2$SignedRank)){
+  if(NATR332.DAT2$SignedRank[i]>0){
+    positive.sum = positive.sum + NATR332.DAT2$SignedRank[i]
+    positive.val = positive.val + 1
+  }else{
+    negative.sum = negative.sum + abs(NATR332.DAT2$SignedRank[i])
+    negative.val = negative.val + 1
+  }
+}
+
+
+if(positive.sum<negative.sum){
+  w = positive.sum
+  print(w)
+}else{
+  w = negative.sum
+  print(w)
+}
+
+
+```
+
+The expected mean of $W$ is calculated by 
+
+$$\mu_W = N_r*(N_r+1)/4$$ 
+with a standard deviation of
+
+$$
+\sigma_W = \sqrt{\frac{N_r(N_r+1)(2N_r+1)}{6}}
+$$
+
+where $N_r$ is the number of ranked values (excluding differences of 0). Calculate a $z$ score by
+
+$$z_W = (W - \mu_W)/\sigma_W$$
+Print both $\mu_W$ and $z_W$.
+
+```{r}
+n.r = length(NATR332.DAT2$SignedRank)
+
+mu.w = n.r * (n.r + 1) / 4
+
+si.w.nu = n.r * (n.r + 1) * (2 * n.r + 1)
+#hard code 6 in the denominator..
+si.w = sqrt(si.w.nu/6)
+z = (mu.w - w)/si.w
+print(mu.w)
+print(z)
+
+
+
+```
+
+
+The NIST page gives a p-values based on the continuity correction. We are not computing this correction. You can compute the $P(z>z_W)$ of your $z_W$ (using the normal distribution) and compare it to
+
+```{r,eval=FALSE}
+p = pnorm(z,lower.tail = TRUE)
+print(p)
+
+wilcox.test(NATR332.DAT$Y1, NATR332.DAT$Y2, paired = TRUE, correct = FALSE, alternative = "less")
+
+#pnorm shows a p-value that is higher than the wilcox.test
+```
+
+while the corrected p-values are given by
+
+```{r,eval=FALSE}
+wilcox.test(NATR332.DAT$Y1, NATR332.DAT$Y2, paired = TRUE, correct = TRUE, alternative = "less")
+wilcox.test(NATR332.DAT$Y1, NATR332.DAT$Y2, paired = TRUE, correct = TRUE, alternative = "greater")
+```
+
+
+
+
+
+
+
