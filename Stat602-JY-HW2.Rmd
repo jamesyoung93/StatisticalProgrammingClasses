@@ -1,0 +1,250 @@
+---
+title: "Homework 2- Modern Applied Statistics II"
+author: "James Young"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,cache = F)
+```
+
+
+Resources: stackoverflow.com, http://www.sthda.com/
+Collaborators: None
+Libraries: ISLR, MASS, knitr, ggplot2, lindia
+
+
+
+```{r}
+library(ISLR)
+library(MASS)
+library(knitr)
+library(ggplot2)
+library(lindia)
+```
+
+
+Please do the following problems from the text book ISLR.
+
+1. Question 3.7.5 pg 121
+
+$$ \hat{y}_{i} = x_{i} \times \frac{\sum_{i'=1}^{n}\left ( x_{i'} y_{i'} \right )}{\sum_{j=1}^{n} x_{j}^{2}} $$
+
+
+$$ \hat{y}_{i} = \sum_{i'=1}^{n} \frac{\left ( x_{i'} y_{i'} \right ) \times x_{i}}{\sum_{j=1}^{n} x_{j}^{2}} $$
+
+$$ \hat{y}_{i} = \sum_{i'=1}^{n} \left ( \frac{ x_{i} x_{i'} } { \sum_{j=1}^{n} x_{j}^{2} } \times y_{i'} \right ) $$
+
+$$ a_{i'} = \frac{ x_{i} x_{i'} } { \sum_{j=1}^{n} x_{j}^{2} } $$
+
+
+2. Question 3.7.10 pg 123
+
+This question should be answered using the Carseats data set.
+(a) Fit a multiple regression model to predict Sales using Price, Urban, and US. 
+
+*The model has been fit.*
+```{r,include=FALSE,warning=F,message=F}
+data(Carseats)
+model1<-lm(Sales~Price+Urban+US, data=Carseats)
+
+#insert code here!
+```
+
+(b) Provide an interpretation of each coeﬃcient in the model. Be careful—some of the variables in the model are qualitative! 
+
+*Below, we can see the results of the linear regression. Price is statistically significant and has a negative assosciation with sales. For each increase in price unit sales drop by 0.05 on average. UrbanYes is not statistically significant but the coefficient represents a decrease in sales of 0.02 if the area is urban as opposed to not urban. USYes shows a statistically significant relationship with sales having ~1.2 more sales as opposed to not US.*
+
+```{r}
+summary(model1)
+```
+
+(c) Write out the model in equation form, being careful to handle the qualitative variables properly.
+
+*As the model currently stands (no variables removed)...*
+**Sales = 13.043 + Price*(-0.054)+UrbanYes*(-0.022)+USYes*(1.201)**
+
+
+(d) For which of the predictors can you reject the null hypothesis H0 : βj = 0? 
+
+*We can reject the null hypothesis that βj = 0 at an alpha of 0.05 for the predictor variables Price and UrbanYes.*
+
+(e) On the basis of your response to the previous question, ﬁt a smaller model that only uses the predictors for which there is evidence of association with the outcome. 
+
+```{r,warning=F,message=F}
+data(Carseats)
+model2<-lm(Sales~Price+US, data=Carseats)
+
+summary(model2)
+
+```
+
+
+(f) How well do the models in (a) and (e) ﬁt the data? 
+
+*Based on the Adjusted R-squared value, the model from part e is slightly better than the first model from part a. To see if this difference is statistically significant we can do an anova test between these two models. Looking below, we can see there is no statistically significant difference between the two models.*
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+anova(model1, model2)
+```
+
+(g) Using the model from (e), obtain 95% conﬁdence intervals for the coeﬃcient(s). 
+
+*Below, we can see the 95% confidence intervals for the intercept, Price, and USYes*
+
+```{r}
+confint(model2)
+```
+
+
+(h) Is there evidence of outliers or high leverage observations in the model from (e)?
+
+*We can see from the plots below that there are a few high leverage observations.*
+
+```{r}
+
+par(mfrow=c(1,1))
+
+# load car packages
+require(car)
+# no evidence of outliers
+#qqPlot(model2, main="QQ Plot")  # studentized resid
+leveragePlots(model2)  # leverage plots
+gg_resleverage(model2, method = "loess", se = FALSE, scale.factor = 1)
+```
+
+
+
+
+3. Question 3.7.15 pg 126
+
+This problem involves the Boston data set, which we saw in the lab for this chapter. We will now try to predict per capita crime rate using the other variables in this data set. In other words, per capita crime rate is the response, and the other variables are the predictors.
+
+
+
+(a) For each predictor, ﬁt a simple linear regression model to predict the response. Describe your results. In which of the models is there a statistically signiﬁcant association between the predictor and the response? Create some plots to back up your assertions. 
+
+*The predictor variables that are statistically significant at alpha 0.05 include all of the variables except "chas". *
+
+```{r}
+data(Boston)
+Model3<-lm(crim~zn, data=Boston)
+
+
+out.table<-as.data.frame(t(summary(Model3)$coefficients[2,]))
+out.table$Model<-"zn"
+
+out.table<-out.table[-1,]
+
+Vec<-colnames(Boston)
+
+for (i in 2:14){
+  Mod<-lm(Boston$crim~ Boston[,i], data=Boston)
+  out1<-as.data.frame(t(summary(Mod)$coefficients[2,]))
+  out1$Model<-Vec[i]
+  out.table<-rbind(out.table, out1)
+  
+}
+
+
+
+out.table<-out.table[,c(5,1,2,3,4)]
+
+kable(out.table)
+
+print( "Plots for crim ~ nox")
+par(mfrow=c(1,1))
+
+plot(Boston$crim~Boston$lstat, data= Boston)
+ggplot(Boston, aes(x=lstat, y=crim)) + geom_point()
+```
+
+
+(b) Fit a multiple regression model to predict the response using all of the predictors. Describe your results. For which predictors can we reject the null hypothesis H0 : βj = 0? 
+
+*Below we can see that we can reject the null hypothesis, βj = 0, at an alpha of 0.05 for the following variables: zn, dis, rad, black, and medv. (When used as predictor variables for "crim")*
+
+```{r}
+fullmodel=lm(crim~.,data=Boston)
+summary(fullmodel)
+layout(matrix(1:4,nrow=2))
+
+
+out.table2<-data.frame(summary(fullmodel)$coefficients)
+```
+
+
+
+(c) How do your results from (a) compare to your results from (b)? Create a plot displaying the univariate regression coeﬃcients from (a) on the x-axis, and the multiple regression coeﬃcients from (b) on the y-axis. That is, each predictor is displayed as a single point in the plot. Its coeﬃcient in a simple linear regression model is shown on the x-axis, and its coeﬃcient estimate in the multiple linear regression model is shown on the y-axis. 
+
+
+*There appears to be some variation on the coefficients but one coefficient stood out, changing from positive 30 to negative 10 depending on wheter the regression was multiple or simple linear.*
+
+```{r}
+out.table2<-out.table2[-1,]
+out.table$Estimate2<-out.table2$Estimate
+plot(Estimate2~Estimate, out.table, xlab= "Coffecients from Simple Linear Regressions", ylab= "Coefficients from Multiple Regression")
+ggplot(out.table, aes(x=Estimate, y=Estimate2)) + geom_point()+
+  labs( x="Coefficients from Simple Linear Regressions", y = "Coefficients from Multiple Regression")
+
+
+
+```
+
+
+
+(d) Is there evidence of non-linear association between any of the predictors and the response? To answer this question, for each predictor X, ﬁt a model of the form
+Y = β0 + β1X + β2X2 + β3X3 + .
+
+
+*Yes, it appears that indus and age are both more statistically significant when modeled as a non-linear association with the response.*
+
+
+```{r}
+Model4<-lm(Boston$crim~ Boston$zn+I(Boston$zn^2)+I(Boston$zn^3))
+
+out.table<-as.data.frame(summary(Model4)$coefficients)
+out.table<-out.table[,-c(2,3)]
+out.table<-as.data.frame(t(out.table))
+out.table$Model<-"zn"
+colnames(out.table)<-c("Intercept", "X", "X^2", "X^3", "Model")
+out.table2<-out.table
+
+coefficientTable<-as.data.frame(out.table[1,])
+coefficientTable<-coefficientTable[-1,]
+
+pValueTable<-as.data.frame(out.table[2,])
+pValueTable<-pValueTable[-1,]
+
+Vec<-colnames(Boston)
+
+for (i in c(2,3,5:14)){
+  Mod<-lm(Boston$crim~ Boston[,i]+I(Boston[,i]^2)+I(Boston[,i]^3), data=Boston)
+  out1<-as.data.frame(summary(Mod)$coefficients)
+  out1<-out1[,-c(2,3)]
+  out1<-as.data.frame(t(out1))
+  out1$Model<-Vec[i]
+  colnames(out1)<-c("Intercept", "X", "X^2", "X^3", "Model")
+  coefficientTable<-rbind(coefficientTable, out1[1,])
+  pValueTable<-rbind(pValueTable, out1[2,])
+  
+}
+
+print('P-Value Table')
+pValueTable<-pValueTable[, c(5,1,2,3,4)]
+row.names(pValueTable)<-NULL
+kable(pValueTable)
+
+print('coefficient Table')
+coefficientTable<-coefficientTable[, c(5,1,2,3,4)]
+row.names(coefficientTable)<-NULL
+kable(coefficientTable)
+```
+
+
+
+

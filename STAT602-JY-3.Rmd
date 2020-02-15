@@ -1,0 +1,203 @@
+---
+title: "Homework 3 - Modern Applied Statistics II"
+author: "James Young"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F)
+```
+
+
+Packages: ISLR, ggplot2, GGally
+Collaborators:
+Resources: stackoverflow.com
+
+```{r, warning=FALSE, message=FALSE}
+require(ISLR)
+library(ggplot2)
+library(GGally)
+```
+
+
+Please do the following problems from the text book ISLR or written otherwise.
+
+1. Question 4.7.1 pg 168
+
+Using a little bit of algebra, prove that (4.2) is equivalent to (4.3). In other words, the logistic function representation and logit representation for the logistic regression model are equivalent.
+
+If we say $v = e^{B_0+B_1x}$
+
+$p(X) = \frac{v}{1+v}$
+ 
+$\frac{1}{p(x)} = \frac{1+v}{v} = 1+\frac{1}{v}$
+ 
+$v = \frac{1}{\frac{1}{p(x)}-1} = \frac{1}{\frac{1-p(x)}{p(x)}} = \frac{p(x)}{1-p(x)}$
+
+
+
+2. Question 4.7.10(a-d) pg 171
+
+This question should be answered using the Weekly data set, which is part of the ISLR package. This data is similar in nature to the Smarket data from this chapter’s lab, except that it contains 1,089 weekly returns for 21 years, from the beginning of 1990 to the end of 2010.
+
+a) Produce some numerical and graphical summaries of the Weekly data. Do there appear to be any patterns?
+
+*I removed variables from the visualization that won't be used in the regression in order to make the remaining variables more visible. Based on the numerical summary and visualizations there doesn't seem to be any strong patterns. On the bright side we can also see there really is not colinearity, either.*
+
+```{r}
+data(Weekly)
+summary(Weekly)
+Weekly$Today <- NULL
+Weekly$Year <- NULL
+pairs(Weekly)
+ggpairs(Weekly, axisLabels = "none")
+```
+
+
+
+b) Use the full data set to perform a logistic regression with Direction as the response and the ﬁve lag variables plus Volume as predictors. Use the summary function to print the results. Do any of the predictors appear to be statistically signiﬁcant? If so, which ones?
+
+*The only predictor variable that seems to be statistically significant at alpha = 0.05 is "Lag2".*
+
+```{r, warning=FALSE, message=FALSE}
+fit.logit <- glm(Direction~., data=Weekly, family=binomial)
+summary(fit.logit)
+```
+
+c) Compute the confusion matrix and overall fraction of correct predictions. Explain what the confusion matrix is telling you about the types of mistakes made by logistic regression.
+
+*The confusion matrix below shows True Postive (top left), False Positive (top right), True Negative (bottom right), and False Positive (bottom left). True positive and true negative show correct predictions while false positive and false negative show type I and type II errors, respectively. This is to say, you can be wrong in different ways and depending on the problem, it may be important which way you are wrong.*
+
+```{r, warning=FALSE, message=FALSE}
+logit.prob <- predict(fit.logit, Weekly, type="response")
+logit.pred <- ifelse(logit.prob > 0.5, "Up", "Down")
+table(logit.pred, Weekly$Direction)
+(54+557)/nrow(Weekly)  # Accuracy=0.56
+```
+
+d) Now ﬁt the logistic regression model using a training data period from 1990 to 2008, with Lag2 as the only predictor. Compute the confusion matrix and the overall fraction of correct predictions for the held out data (that is, the data from 2009 and 2010).
+
+*See results below. 62.5% of observations were correctly predicted. False positive and false negative seem fairly balanced.*
+
+```{r, warning=FALSE, message=FALSE}
+data("Weekly")
+train.yrs <- Weekly$Year %in% (1990:2008)
+train <- Weekly[train.yrs,]
+test <- Weekly[!train.yrs,]
+fit2 <- glm(Direction~Lag2, data=train, family=binomial)
+fit2.prob <- predict(fit2, test, type="response")
+fit2.pred <- ifelse(fit2.prob > 0.5, "Up", "Down")
+table(fit2.pred, test$Direction)
+mean(fit2.pred == test$Direction)  
+
+```
+
+
+3. Question 4.7.11(a,b,c,f) pg 172
+In this problem, you will develop a model to predict whether a given car gets high or low gas mileage based on the Auto data set.
+
+a) Create a binary variable, mpg01, that contains a 1 if mpg contains a value above its median, and a 0 if mpg contains a value below its median. You can compute the median using the median() function. Note you may ﬁnd it helpful to use the data.frame() function to create a single data set containing both mpg01 and the other Auto variables.
+
+*Completed.*
+
+```{r, warning=FALSE, message=FALSE}
+require(ISLR)
+data(Auto)
+mpg01 <- ifelse(Auto$mpg > median(Auto$mpg), 1, 0)
+mydf <- data.frame(Auto, mpg01)
+```
+
+
+b) Explore the data graphically in order to investigate the association between mpg01 and the other features. Which of the other features seem most likely to be useful in predicting mpg01? Scatterplots and boxplots may be useful tools to answer this question. Describe your ﬁndings.
+
+*Based on the visualization, horsepower and weight predictor variables seem to provide the most discriminatory power for determining if mpg was above or below the median mpg.*
+
+```{r, warning=FALSE, message=FALSE}
+mydf = mydf[,2:10]
+mydf$name <- NULL
+pairs(mydf)
+ggpairs(mydf, axisLabels = "none")
+```
+
+
+
+c) Split the data into a training set and a test set.
+
+*Used a 60/40 split.*
+
+```{r}
+set.seed(123)
+trainid <- sample(1:nrow(mydf), nrow(mydf)*0.6 , replace=F)  # 70% train, 30% test
+train <- mydf[trainid,]
+test <- mydf[-trainid,]
+```
+
+
+
+f) Perform logistic regression on the training data in order to predict mpg01 using the variables that seemed most associated with mpg01 in (b). What is the test error of the model obtained?
+
+*Horsepower and weight seemed to discriminate mpg performance the best from a visual standpoint, so I used them as predictor variables. The test error is ~0.11.*
+
+```{r}
+fit.logit2 <- glm(mpg01~horsepower+weight, data=train, family=binomial)
+logit.prob <- predict(fit.logit2, test, type="response")
+logit.pred <- ifelse(logit.prob > 0.5, 1, 0)
+table(logit.pred, test$mpg01)
+mean(logit.pred != test$mpg01)  # error rate
+```
+
+
+
+4. Write a function in RMD that calculates the misclassification rate, sensitivity, and specificity. The inputs for this function are a cutoff point, predicted probabilities, and original binary response. Test your function using the model from 4.7.10 b. (Post any questions you might have regarding this on the discussion board, this needs to be an actual function, using the function() command, not just a chunk of code). This will be something you will want to use throughout the semester, since we will be calculating these a lot! \textit{Show the function code you wrote in your final write-up.}
+
+*Function code is included directly below. See results further below.*
+
+
+```{r, include= TRUE, echo=TRUE}
+BinaryResults = function(cut_off, pred, orig){
+  pred = ifelse(pred > cut_off, 1, 0)
+  class_matrix = table(pred, orig)
+  misclass = (class_matrix[2]+class_matrix[3])/sum(class_matrix)
+  sensit = (class_matrix[1]/(class_matrix[1]+class_matrix[2]))
+  specif = (class_matrix[4]/(class_matrix[4]+class_matrix[3]))
+  
+  cat("These values are predicated on `Down` being the positive reponse\n")
+  cat("and `Up` being the negative response.\n\n")
+  cat("Misclassification rate:\n")
+  print(misclass)
+  cat("Sensitivity:\n")
+  print(sensit)
+  cat("Specificity:\n")
+  print(specif)
+}
+```
+
+
+
+```{r}
+pred <- predict(fit.logit, Weekly, type = 'response')
+BinaryResults(0.5, pred, Weekly$Direction)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
