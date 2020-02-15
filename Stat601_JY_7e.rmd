@@ -1,0 +1,362 @@
+---
+title: "Homework 7"
+author: "James Young"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+
+
+Please do the following problems from the text book R Handbook and stated.
+
+Packages used: survival, ISWR, HSAUR3, coin, party, survminer, gridExtra
+
+Collaborators: Alex Soupir
+
+Resources used: StackOverflow
+
+```{r}
+set.seed(1)
+library(survival)
+library(ISwR)
+library(HSAUR3)
+library(coin)
+library(party)
+library(survminer)
+library(gridExtra)
+```
+
+
+
+1. An investigator collected data on survival of patients with lung cancer at Mayo Clinic. The investigator would like you, the statistician, to answer the following questions and provide some graphs. Use the \textbf{cancer} data located in the \textbf{survival} package.
+
+    a. What is the probability that someone will survive past 300 days?
+    
+**Patients who died received status of 2, so status in Surv was set to == 2. The probability of patient from this dataset living past 300 days is 0.531.**
+    
+```{r}
+data(cancer)
+model1 = survfit(Surv(time, status == 2)~1, data = cancer, conf.int=0.95, conf.type="plain")
+summary(model1, times = 300)
+
+```
+
+
+    
+    b. Provide a graph, including 95% confidence limits, of the Kaplan-Meier estimate of the entire study.
+    
+**The requested graph is provided below in a base r version and ggplot version. The ggplot version is more aesthetically pleasing and easily customizable in my opinion.**
+    
+```{r}
+set.seed(1)
+plot(model1, main="Kaplan-Meier Estimate of Lung Cancer Data", ylab="Survival Probability", xlab="Survival Time (days)")
+legend("bottomleft", c("Survival", "95% CI"), lty = c(1, 2), col = c(1,1))
+
+  
+plot1 = ggsurvplot(
+      model1,
+      data = cancer,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = "Survival"
+    ) + labs(
+      title="Kaplan-Meier Estimate of Lung Cancer Data"
+    )
+    
+    plot1 = ggpar(
+      plot1, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    plot1
+    
+```
+    
+    
+    c. Is there a difference in the survival rates between males and females? Provide a formal statistical test with a p-value and visual evidence.
+    
+**The first survival plot demonstrates females have a higher probability of survival until roughly 800 days. Males  have a 0.4411 probability of surviving past 300 days  and females have a probability of 0.674 of surviving past 300 days. Males and females had a probability of 0.0781 and 0.125 of surviving past 750 days, respectively. survdiff() was used to calculate a chisq of males vs females survival rate, which had a p-value of 0.001, showing a statistically significant difference in survival between males and females, with females having the good fortune in this case.**
+
+    
+```{r}
+set.seed(1)
+    
+    layout(matrix(1:1, ncol = 1))
+    model2 = survfit(Surv(time, status == 2) ~ sex, data = cancer, conf.int=0.95, conf.type="plain")
+    plot(model2, main="Survival of Males and Females with Lung Cancer", xlab="Survival Time (days)", ylab="Survival Probability", lty=c(1,2), col=c(1,2))
+    legend("bottomleft",c("Males", "Females"), lty=c(1,2), col=c(1,2))
+    
+    plot1c = ggsurvplot(
+      model2,
+      data = cancer,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("Males","Females")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Males and Females with Lung Cancer"
+    )
+    
+    plot2 = ggpar(
+      plot1c, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    plot2
+    
+    #By Sex
+    #males
+    layout(matrix(1:2, ncol = 2))
+    m2 = subset(cancer, sex ==1)
+    m2.mod = survfit(Surv(time, status == 2) ~ 1, data = m2, conf.int=0.95, conf.type="plain")
+    cat("\nProbability of a male living past 300 and 750 days: \n")
+    summary(m2.mod, times = c(300, 750))
+    plot(m2.mod, main="Survival of Males with\n Lung Cancer", xlab="Survival Time (days)", ylab="Survival Probability")
+    legend("topright", c("Survival", "95% CI"), lty = c(1, 2), col = c(1,1))
+    
+    plotm2 = ggsurvplot(
+      m2.mod,
+      data = m2,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("Males")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Males with Lung Cancer"
+    )
+    
+    plotm2 = ggpar(
+      plotm2, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    
+    #females
+    fem = subset(cancer, sex == 2)
+    fem.mod = survfit(Surv(time, status == 2) ~ 1, data = fem, conf.int=0.95, conf.type="plain")
+    cat("\nProbability of a female living past 300 and 750 days: \n")
+    summary(fem.mod, times = c(300, 750))
+    plot(fem.mod, main="Survival of Females with\n Lung Cancer", xlab="Survival Time (days)", ylab="Survival Probability")
+    legend("topright", c("Survival", "95% CI"), lty = c(1, 2), col = c(1,1))
+    
+    plotfem = ggsurvplot(
+      fem.mod,
+      data = fem,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("Females")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Females with Lung Cancer"
+    )
+    
+    plot2 = ggpar(
+      plotfem, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    
+    plotm2
+    plot2
+    
+    cat("\nChisq test between males and females: \n")
+    survdiff(Surv(time, status == 2) ~ sex, data = cancer)
+```
+    
+    
+    d. Is there a difference in the survival rates for the older half of the group versus the younger half? Provide a formal statistical test with a p-value and visual evidence.
+    
+**The median age of patients was found to be 63 which served as the split point for comparing the survival rates of the older half verse the younger half of patients. The first plot appears to show relatively less difference in survival due to age then the difference we saw due to gender. The survival rates for the 2 groups was found with survfit() at times of 300 and 750 days. The younger group has a 0.551 probability of surviving past 300 days while the older group has a probability of 0.509 of surviving past 300 days. At 750 days, the older group has a survival probability of 0.066 and the younger group has a survival probability of 0.133. survdiff() was used to compute a chi-squared p-value of 0.2, meaning there is not a statistically significant difference in survival rates between the older and younger half of lung cancer patients in this data.**
+
+    
+```{r}
+set.seed(1)
+    cat("Finding median age of cancer patients: \n")
+    median(cancer$age)
+    cancer$agecat = ifelse(cancer$age > 63, ">63", "<63")
+    layout(matrix(1:1, ncol=1))
+    model3 = survfit(Surv(time, status ==2) ~ agecat, data = cancer, conf.int=0.95, conf.type="plain")
+    plot(model3, main="Survival of Older and Younger Patients with Lung Cancer (63yo)", xlab="survival Time (days)", ylab="Survival Probability", lty=c(1,2), col=c(1,2))
+    legend("bottomleft", c("< 63 yo", "> 63 yo"), lty=c(1,2), col=c(1,2))
+    
+    plotm3 = ggsurvplot(
+      model3,
+      data = cancer,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("< 63","> 63")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Males and Females with Lung Cancer"
+    )
+    
+    plotm3 = ggpar(
+      plotm3, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    plotm3
+    
+    layout(matrix(1:2, ncol = 2))
+    lm3 = subset(cancer, agecat == "<63")
+    lm3.mod = survfit(Surv(time, status == 2) ~ 1, data = lm3, conf.int=0.95, conf.type="plain")
+    cat("\nProbability of younger than 63 living past 300 and 750 days: \n")
+    summary(lm3.mod, times = c(300, 750))
+    plot(lm3.mod, main="Survival of Patients Younger\n than 63", xlab="Survival Time (days)", ylab="Survival Probability")
+    legend("topright", c("Survival", "95% CI"), lty = c(1, 2), col = c(1,1))
+    
+    plotlm3 = ggsurvplot(
+      lm3.mod,
+      data = lm3,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("< 63")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Patients Younger than 63 Years Old with Lung Cancer"
+    )
+    
+    plotlm3 = ggpar(
+      plotlm3, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    
+    gm3 = subset(cancer, agecat == ">63")
+    gm3.mod = survfit(Surv(time, status == 2) ~ 1, data = gm3, conf.int=0.95, conf.type="plain")
+    cat("\nProbability of those older than 63 living past 300 and 750 days: \n")
+    summary(gm3.mod, times = c(300, 750))
+    plot(gm3.mod, main="Survival of Patients Older\n than 63", xlab="Survival Time (days)", ylab="Survival Probability")
+    legend("topright", c("Survival", "95% CI"), lty = c(1, 2), col = c(1,1))
+    
+    plotgm3 = ggsurvplot(
+      gm3.mod,
+      data = gm3,
+      size=1,
+      conf.int=TRUE,
+      ggtheme=theme_bw(),
+      xlab="Survival Time (days)",
+      legend.labs = c("> 63")
+    ) + labs(
+      title="Kaplan-Meier Estimate of Patients Older than 63 Years Old with Lung Cancer"
+    )
+    
+    plotgm3 = ggpar(
+      plotgm3, font.title = c(18, "bold", "black"),
+      font.x = c(15, "bold","black"),
+      font.y = c(15, "bold","black"),
+      legend = "top"
+    )
+    
+    plotlm3
+    plotgm3
+    
+    cat("\nChisq test between younger and older: \n")
+    survdiff(Surv(time, status == 2) ~ agecat, data = cancer)
+```
+    
+    
+    
+    
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.**
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+**Adding a little spacing to fulfill requirement of having question 2 on a single page.** 
+
+    
+    
+    
+
+2. A healthcare group has asked you to analyse the \textbf{mastectomy} data from the \textbf{HSAUR3} package, which is the survival times (in months) after a mastectomy of women with breast cancer. The cancers are classified as having metastasized or not based on a histochemical marker. The healthcare group requests that your report should not be longer than one page, and must only consist of one plot, one table, and one paragraph. Do the following:
+
+    a. Plot the survivor functions of each group only using GGPlot, estimated using the Kaplan-Meier estimate.
+    
+```{r}
+    set.seed(1)
+    data(mastectomy)
+    
+    model2a = survfit(Surv(time, event == TRUE) ~ metastasized, data=mastectomy)
+    ggsurv = ggsurvplot(model2a,
+               data=mastectomy,
+               risk.table=TRUE,
+               pval=0.0615,
+               conf.int=TRUE,
+               xlab="Survival Time (months)",
+               risk.table.y.text.col = T,
+               risk.table.y.text = FALSE,
+               legend.labs=c("Non-metastasized", "Metastasized")
+               )
+    ggsurv$plot = ggsurv$plot + labs(
+      title="Survival Curves",
+      subtitle="Based on Kaplan-Meier estimates"
+    )
+    
+    ggsurv <- ggpar(
+      ggsurv,
+      font.title    = c(18, "bold", "black"),         
+      font.subtitle = c(12, "bold.italic", "black"),     
+      font.x        = c(15, "bold.italic", "black"),          
+      font.y        = c(15, "bold.italic", "black"),      
+      font.xtickslab = c(15, "plain", "black"),
+      legend = "top"
+    )
+    
+    ggsurv
+```
+    
+
+    b. Use a log-rank test to compare the survival experience of each group more formally. Only present a formal table of your results. 
+    
+```{r}
+    ranktest = logrank_test(Surv(time, event == TRUE) ~ metastasized, data = mastectomy, distribution = "exact")
+   # ranktest
+```
+  
+```{r}
+        survtab = data.frame("Formula" = "Surv(time, event == TRUE) by metastasized",
+                         "Z-value" = 1.8667,
+                         "P-value" = 0.06146)
+    cat("Log-Rank Test Results: \n")
+    print(survtab)
+```
+
+
+    c. Write one paragraph summarizing your findings and conclusions. 
+    
+**The patients identified as having metastasized cancer appear to be at a higher risk of death than patients identified as non-metastisized based on the Survival plot. The non-metastized patients have a much higher upper-bound on their confidence interval across the 50 months. However, there is overlap between the confidence intervals of metastisized and non-metastisized patients. To give more robust insight, a log-rank test was completed which showed that the difference between the two groups is not statistically significant at the 0.05 level, although it is very close (p-value ~ 0.06).**
+    
+
+

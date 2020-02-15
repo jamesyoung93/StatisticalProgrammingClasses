@@ -1,0 +1,255 @@
+---
+title: "Homework 2"
+author: "James Young"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+
+Answer all questions specified on the problem and include a discussion on how your results answered/addressed the question.
+
+Submit your \textbf{.rmd} file with the knitted \textbf{PDF} (or knitted Word Document saved as a PDF). If you are having trouble with .rmd, let us know and we will help you, but both the .rmd and the PDF are required.
+
+This file can be used as a skeleton document for your code/write up. Please follow the instructions found under Content for Formatting and Guidelines. No code should be in your PDF write-up unless stated otherwise.
+
+For any question asking for plots/graphs, please do as the question asks as well as do the same but using the respective commands in the GGPLOT2 library. (So if the question asks for one plot, your results should have two plots. One produced using the given R-function and one produced from the GGPLOT2 equivalent). This doesn't apply to questions that don't specifically ask for a plot, however I still would encourage you to produce both.
+
+You do not need to include the above statements.
+
+Please do the following problems from the text book R Handbook and stated.
+
+
+```{r}
+install.packages("HSAUR3")
+library(HSAUR3)
+```
+
+```{r}
+install.packages("gamair")
+```
+
+
+```{r}
+library(HSAUR3)
+library(ggplot2)
+library(gamair)
+
+```
+
+1. Collett (2003) argues that two outliers need to be removed from the \textbf{plasma} data. Try to identify those two unusual observations by means of a scatterplot. (7.2 on Handbook)
+```{r}
+plasma = plasma
+attach(plasma)
+plot(fibrinogen, globulin)
+
+#ggplot version
+ggplot(plasma, aes(x=fibrinogen, y=globulin)) + geom_point(shape = 1)
+detach(plasma)
+```
+
+Upon visiual inspection, it appears to me that there are more than two possible outliers but my foremost suspect is the data point with fibrinogen >5. For the second outlier, it could be any data point with globulin > 45 or fibrinogen > 4.
+
+2. (Multiple Regression) Continuing from the lecture on the \textbf{hubble} data from \textbf{gamair} library;
+
+
+    a) Fit a quadratic regression model, i.e.,a model of the form
+$$\text{Model 2:   } velocity = \beta_1 \times distance + \beta_2 \times distance^2 +\epsilon$$
+```{r}
+data(hubble)
+hubble = hubble
+    
+#calculate the distance squared and add to hubble.df
+model2 = lm(y ~ x + I(x^2), data = hubble)
+model3 = lm(y ~ x, data = hubble)
+    
+#organize the values to make base r graph look better
+newdat = data.frame(x = seq(min(hubble.df$x), max(hubble.df$x), length.out = 100))
+newdat$pred = predict(model2, newdata = newdat)
+```
+
+
+
+    b) Plot the fitted curve from Model 2 on the scatterplot of the data
+    
+```{r}
+
+plot(x = hubble$x, hubble$y)
+abline(model3, col = 'blue')
+with(newdat, lines(x = x, y = pred))
+legend("topleft", legend=c("simple", "quadratic"),
+col=c("green", "blue"), lty=1, cex=0.8)
+```
+    
+    
+    c) Add the simple linear regression fit (fitted in class) on this plot - use different color and line type to differentiate the two and add a legend to your plot.
+    
+```{r}
+   ggplot(hubble.df, aes(x=hubble.df$x, y=hubble.df$y)) + geom_point() + 
+      geom_line(data = fortify(model2), aes(x=hubble.df$x, y = .fitted, colour='blue'), show.legend = TRUE) + 
+      geom_line(data = fortify(model3), aes(x=hubble.df$x, y = .fitted, colour='red'), show.legend = TRUE) +
+      scale_color_discrete(name = "Model", labels = c("quad", "simple"))
+```
+
+    
+    d) Which model do you consider most sensible considering the nature of the data - looking at the plot? 
+    
+
+    
+
+    
+    e) Which model is better? - provide a statistic to support you claim.
+    
+```{r}
+MSE1 = mean((predict(model2, newdat, type = 'response') - hubble.df$x)^2)
+cat('Quadratic regression MSE =     ', MSE1, '\n')
+MSE2 = mean((predict(model3, newdat, type = 'response') - hubble.df$x)^2)
+cat('Simple linear regression MSE = ', MSE2, '\n')
+```
+
+    
+    Note: The quadratic model here is still regarded as a ``linear regression" model since the term ``linear" relates to the parameters of the model and not to the powers of the explanatory variables. 
+
+3. The \textbf{leuk} data from package \textbf{MASS} shows the survival times from diagnosis of patients suffering from leukemia and the values of two explanatory variables, the white blood cell count (wbc) and the presence or absence of a morphological characteristic of the white blood cells (ag). 
+
+    a) Define a binary outcome variable according to whether or not patients lived for at least 24 weeks after diagnosis. Call it \textit{surv24}. 
+```{r}
+library(MASS)
+data(leuk, package = 'MASS')
+leuk.df = leuk
+    
+surv24 = ifelse(leuk.df$time >= 24, 1, 0)
+```
+    
+    
+    b) Fit a logistic regression model to the data with \textit{surv24} as response. It is advisable to transform the very large white blood counts to avoid regression coefficients very close to 0 (and odds ratio close to 1). You may use log transformation.
+    
+```{r}
+    #calculate log of wbc and create a logistic regression without interaction
+    leuk.df$wbcLog = log10(leuk.df$wbc)
+    
+    model.logistic = glm(surv24~wbcLog + ag, data = leuk.df, family=binomial())
+    ```
+    
+    c) Construct some graphics useful in the interpretation of the final model you fit. 
+    
+    ```{r, echo=FALSE}
+#following plot from example in GLM_CH7.R to create plot using base R
+    p = leuk.df$ag == 'present'
+    surviving.pred = predict(model.logistic, type = 'response')
+    plot(leuk.df$wbcLog, surv24, col=leuk.df$ag, ylab="Probability of surviving", xlab="log10(wbc)", ylim=c(0,1))
+    lines(leuk.df$wbcLog[!p], surviving.pred[!p], lty=1)
+    lines(leuk.df$wbcLog[p], surviving.pred[p], lty=2)
+    legend('topright', legend=c("absent", "present"), lty=1:2, bty='n')
+    #create same plot using ggplot
+    leuk.df = cbind(leuk.df, preds = surviving.pred)
+    ggplot(leuk.df, aes(x=leuk.df$wbcLog, y=surv24, colour=ag))+ geom_point()+
+      geom_line(data=leuk.df[leuk.df$ag =='present',], aes(x=wbcLog, y=preds), colour='blue')+
+      geom_line(data=leuk.df[leuk.df$ag == 'absent',], aes(x=wbcLog, y=preds), colour='red')+
+      scale_color_discrete(name = "Results")
+    #scatter plot between log wbc and time survived after diagnosis
+    ggplot(leuk.df, aes(x=time, y=wbcLog, colour=ag))+
+      geom_point()
+```
+    
+    
+    c) Construct some graphics useful in the interpretation of the final model you fit.
+    
+```{r}
+ #following plot from example in GLM_CH7.R to create plot using base R
+p = leuk.df$ag == 'present'
+surviving.pred = predict(model.logistic, type = 'response')
+plot(leuk.df$wbcLog, surv24, col=leuk.df$ag, ylab="Probability of surviving", xlab="log10(wbc)", ylim=c(0,1))
+lines(leuk.df$wbcLog[!p], surviving.pred[!p], lty=1)
+lines(leuk.df$wbcLog[p], surviving.pred[p], lty=2)
+legend('topright', legend=c("absent", "present"), lty=1:2, bty='n')
+#create same plot using ggplot
+leuk.df = cbind(leuk.df, preds = surviving.pred)
+ggplot(leuk.df, aes(x=leuk.df$wbcLog, y=surv24, colour=ag))+ geom_point()+
+geom_line(data=leuk.df[leuk.df$ag =='present',], aes(x=wbcLog, y=preds), colour='blue')+
+geom_line(data=leuk.df[leuk.df$ag == 'absent',], aes(x=wbcLog, y=preds), colour='red')+
+scale_color_discrete(name = "Results")
+#scatter plot between log wbc and time survived after diagnosis
+ggplot(leuk.df, aes(x=time, y=wbcLog, colour=ag))+
+geom_point()
+```
+    
+    
+    d) Fit a model with an interaction term between the two predictors. Which model fits the data better? Justify your answer.
+    
+```{r}
+#create logistic regression with interaction and compare MSE to model without interaction
+model.logistic2 = glm(surv24~wbcLog + ag + wbcLog * ag, data=leuk.df, family=binomial())
+MSE3 = mean((predict(model.logistic, leuk.df, type='response') - surv24)^2)
+cat('no interaction model MSE:', MSE3, '\n')
+MSE4 = mean((predict(model.logistic2, leuk.df, type='response') - surv24)^2)
+cat('interaction model MSE:   ', MSE4, '\n')
+```
+    
+
+4. Load the \textbf{Default} dataset from \textbf{ISLR} library. The dataset contains information on ten thousand customers. The aim here is to predict which customers will default on their credit card debt. It is a four-dimensional dataset with 10000 observations. The question of interest is to predict individuals who will default . We want to examine how each predictor variable is related to the response (default). Do the following on this dataset 
+
+    a) Perform descriptive analysis on the dataset to have an insight. Use summaries and appropriate exploratory graphics to answer the question of interest.
+    
+```{r}
+#import library
+install.packages("ISLR")
+library(ISLR)
+data("Default")
+default.df = Default
+```
+    
+    
+    b) Use R to build a logistic regression model. 
+    
+```{r}
+    #create vector for whether or not they defaulted and create interaction model and non-interaction model
+    defs = ifelse(default.df$default == 'Yes', 1, 0)
+    defs.model = glm(defs~student + balance + income + student*balance + student*income + balance*income, data=default.df, family=binomial())
+    defs.model2 = glm(defs~student + balance + income, data=default.df, family=binomial())
+```
+    
+    
+    c) Discuss your result. Which predictor variables were important? Are there interactions?
+    
+```{r}
+#summary of the interaction model
+summary(defs.model)
+
+#summary of the non-interaction model
+summary(defs.model2)
+```
+    
+    
+    d) How good is your model? Assess the performance of the logistic regression classifier. What is the error rate? 
+    
+```{r}
+#comparison of the MSE between the interaction model and the model without interaction
+MSE5 = mean((predict(defs.model, default.df, type = 'response') - defs)^2)
+cat('Logistic regression with interaction terms MSE =    ', MSE5, '\n')
+MSE6 = mean((predict(defs.model2, default.df, type = 'response') - defs)^2)
+cat('Logistic regression without interaction terms MSE = ', MSE6, '\n')
+
+```
+    
+
+5. Go through Section 7.3.1 of the Handbook. Run all the codes (additional exploration of data is allowed) and write your own version of explanation and interpretation.
+
+```{r}
+#Confusion matrices to determine the accuracy of the logistic regression models
+defs1 = predict(defs.model, default.df, type = 'response')
+defs1 = ifelse(defs1 >= 0.5, 1, 0)
+table1 = table(defs1, defs)
+print('Accuracy of LRM with interaction: ')
+sum(diag(table1))/sum(table1)
+defs2 = predict(defs.model2, default.df, type = 'response')
+defs2 = ifelse(defs2 >= 0.5, 1, 0)
+table2 = table(defs2, defs)
+print('Accuracy of LRM without interaction: ')
+sum(diag(table2))/sum(table2)
+```
+
+
+

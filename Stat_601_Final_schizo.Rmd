@@ -1,0 +1,95 @@
+
+---
+title: 'Stat601 Final Problem 1: Schizophrenia'
+author: "James Young"
+date: "December 16, 2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=F,warning=F)
+```
+
+## Libraries and References
+
+This project uses knitr, HSAUR3, plyr, survival, ggplot2, and their dependent packages. I referenced my previous homework from this course for modification and use in this project.
+```{r}
+library(knitr)
+library(HSAUR3)
+library(plyr)
+library(survival)  
+```
+
+## The Problem
+
+I am given the task of determining if the time of onset of schizophrenia has a significant effect on the progression of the disease. The onset in this dataset is measured as occuring either before or after 20 years of age.
+
+## The Data
+
+The data is composed of 4 variables including *subject*, *onset*, *disorder*, and *month*. The response is the factor variable, *disorder*, with options present or absent. There are a few NA's in *disorder* which will be considered dropouts, but we cannot say for sure what reasons they dropped out for. I notice that there are about 3 times as many observations in the early onset group as the late onset group, as well. 
+
+Below the table we can see cdplots and mosaic plots visualizing the progression of disease. We see that the early onset group has proportionally more dropouts and that both groups tend to not have schizophrenia by month 10. It appears that the late onset group may get better slightly quicker.
+
+```{r}
+data(schizophrenia2)
+kable(summary(schizophrenia2))
+```
+
+
+```{r}
+set.seed(123)
+data(schizophrenia2)
+s = schizophrenia2
+
+s = s[complete.cases(s),]
+s2 = s
+s2$disorder = ifelse(s2$disorder == "present", 1, 0)
+    
+itp <- interaction(s2$onset, s2$month)
+
+sc = schizophrenia2
+sc$disorder = factor(sc$disorder, exclude=NULL)
+levels(sc$disorder)[3] = "dropout"
+l20 <- subset(sc, onset == "< 20 yrs")
+g20 <- subset(sc, onset == "> 20 yrs")
+layout(matrix(1:2, nrow = 1))
+cdplot(disorder~month, data=l20, main = "Onset < 20")
+cdplot(disorder~month, data=g20, main = "Onset > 20")
+layout(matrix(1:1, nrow = 1))
+colors = c("white","grey80","darkred")
+mosaicplot(xtabs(~ onset + month + disorder, data = sc))
+
+```
+
+## The Model
+
+I used a survival model to visualize and, further below, quantify any difference between the progress of schizophrenia conditional on time of onset. The survival plot tracks time in months on the x-axis and probability of schizophrenia being present on the y-axis. The red dashed line tracks the probability of schizphrenia being present for the late onset group and the black solid line tracks it for the early onset group. Visually, it looks like there is a small difference, with schizophrenic symptoms being absent slightly sooner for the late onset group. This is consistent with the plots above. We will see further below if there is a true statistically significant difference.
+
+```{r}
+set.seed(123)
+    layout(matrix(1:1, ncol = 1))
+    model2 = survfit(Surv(month, disorder == "absent") ~ onset, data = schizophrenia2, conf.int=0.95, conf.type="plain")
+    plot(model2, main="Effect of Onset on Schizophrenia Persistence", xlab="Time (months)", ylab="Schizophrenia Presence Probability", lty=c(1,2), col=c(1,2))
+    legend("bottomleft",c("Early", "Late"), lty=c(1,2), col=c(1,2))
+```
+
+
+## Does Onset Have a Significant Effect Progression of Schizophrenia?
+
+To determine whether there is statistically significant difference in disease progression conditional on disease onset, I will perform a chi-square test on the survival plots and evaluate the p-value with alpha =0.05 as the threshold for significance. We can see below that the p-value is greater than 0.05 and can conclude, based on this data, that the onset of schizophrenia does not effect the progression of the disease in a statistically significant way. 
+
+```{r}
+survdiff(Surv(month, disorder == "present") ~ onset, data=schizophrenia2)
+```
+
+## Conclusions
+
+Through data exploration I noticed a slight difference between the progression of schizophrenia between early and late onset group. It seemed visually that the late onset group stopped having symptoms of schizophrenia faster than the early onset group. However, using a more analytical approach where I made survival plots for each group and did a chi-square test to look for a difference, it was appearent that there was no statistically significant difference in disease progression based on time of onset. Based on the data table presented at the beginning, we know there were almost 3 times more observations in the early onset group than the late onset group. Colelcting more data on this issue may reveal a different result.
+
+
+
+
+
+

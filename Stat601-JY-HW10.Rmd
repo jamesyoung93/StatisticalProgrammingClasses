@@ -1,0 +1,197 @@
+---
+title: "Homework 10"
+author: "James Young"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+Resources: StackOverflow
+
+Libraries used:library(HSAUR3)
+library(gee)
+library(geepack)
+library(HSAUR3)
+library(vcd)
+library(lme4)
+library(MESS)
+
+
+
+```{r}
+library(HSAUR3)
+library(gee)
+library(geepack)
+library(HSAUR3)
+library(vcd)
+library(lme4)
+library(MESS)
+```
+
+
+1. Consider the \textbf{respiratory} data from the \textbf{HSAUR3} package.
+
+    a. Investigate the use of other correlational structures than the independence and exchangeable structures used in the text for the respiratory data.
+    
+**Below I tried the AR-M, Unstructured and stat_M_dep correlational structures. I have printed out the coefficients of each model. We can see the unstructured correlational structure has the least variation between Naive S.E. and Robust S.E.and stat_M_dep has the most variance between between S.E. types of the models. When looking at the p-values printed at the bottom of this section, we can see centre2, trttrt, and baseline good are statistically significant at an alpha level of 0.05**
+    
+```{r}
+
+data("respiratory", package = "HSAUR3")
+ 
+resp <- subset(respiratory, month > "0")
+resp$baseline <- rep(subset(respiratory, month == "0")$status,
+                     rep(4, 111))
+
+resp$nstat <- as.numeric(resp$status == "good")
+resp$month <- resp$month[, drop = TRUE]
+head(resp, n = 3)
+
+names(resp)[names(resp) == "treatment"] <- "trt"
+levels(resp$trt)[2] <- "trt"
+
+gee_statMdep <- gee(nstat ~ centre + trt + gender + baseline 
+                     + age, data = resp, family = "binomial", id = subject, 
+                     corstr = "stat_M_dep", scale.fix = TRUE, 
+                     scale.value = 1)
+
+gee_unstructured <- gee(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "unstructured", scale.fix = TRUE, 
+                 scale.value = 1)
+
+gee_AR_M <- gee(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "AR-M", Mv = 1, scale.fix = TRUE, 
+                 scale.value = 1)
+
+
+cat("\nCoefficients for correlation structure 'unstructured': \n")
+summary(gee_unstructured)$coef
+cat("\nCoefficients for correlation structure 'AR-M': \n")
+summary(gee_AR_M)$coef
+cat("\nCoefficients for correlation structure 'stat_M_dep': \n")
+summary(gee_statMdep)$coef
+
+
+2*pnorm(abs(summary(gee_unstructured)$coef[,3]), lower.tail = FALSE)
+
+```
+   
+    b. Which model is the best? Compare the following models: independent, exchangable, and what ever models you tried in part (a). Justify your answer. (Hint: use QIC (in \textbf{MESS}), MSE, misclassification rate, comparison of naive vs robust Z-score, or another method, be sure to state your method)
+    
+**Using the QIC method, we see that the unstructured correlational structure has the lowest QIC of the models below making it the best model choice out of the models presented here.**
+    
+    ```{r}
+
+gee_independence <- geeglm(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "independence")
+gee_exchangeable <- geeglm(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "exchangeable")
+gee_unstructured <- geeglm(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "unstructured")
+
+gee_AR_M <- geeglm(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                 corstr = "AR-M")
+
+gee_statMdep <- geeglm(nstat ~ centre + trt + gender + baseline 
+                 + age, data = resp, family = "binomial", id = subject, 
+                     corstr = "stat_M_dep")
+
+cat("\nQIC for correlation structure 'gee_unstructured': \n")
+QIC(gee_unstructured)
+cat("\nQIC for correlation structure 'gee_AR_M': \n")
+QIC(gee_AR_M)
+cat("\nQIC for correlation structure 'gee_exchangeable': \n")
+QIC(gee_exchangeable)
+cat("\nQIC for correlation structure 'gee_independence': \n")
+QIC(gee_independence)
+cat("\nQIC for correlation structure 'gee_statMdep': \n")
+QIC(gee_statMdep)
+```
+    
+2. The data set \textbf{schizophrenia2} from \textbf{HSAUR3} package were collected in a follow-up study of women patients with schizophrenia (Davis, 2002). The binary response recorded at 0, 2, 6, 8 and 10 months after hospitalization was ``thought disorder'' (absent or present). The single covariate is the factor indicating whether a patient had suffered early or late onset of her condition (age of onset less than 20 years or age of onset 20 years or above). The question of interest is whether the course of the illness differs between patients with early and late onset schizophrenia. (https://www.rdocumentation.org/packages/HSAUR3/versions/1.0-9/topics/schizophrenia2)
+Investigate this question using 
+
+    a. plots and summary statistics
+    
+**Below we can see there is a decrease in the disorder over time, with the over 20 group showing a faster decrease. From the summary statistics we see the over 20 group was about 3 times smaller than the under 20 group, so the observed trends may be more similar if more observations are made for the over 20 group.**
+    
+```{r, eval=T}
+data(schizophrenia2)
+
+mosaic(disorder~onset+month, data=schizophrenia2,shade=TRUE)
+
+
+onsetl20 <- subset(schizophrenia2, onset == "< 20 yrs")
+onsetg20 <- subset(schizophrenia2, onset == "> 20 yrs")
+cat("\nSummary Statistics for onset after 20 years old: \n")
+summary(onsetg20)
+cat("\nSummary Statistics for onset before 20 years old: \n")
+summary(onsetl20)
+
+
+```
+    
+    b. the GEE approach
+    
+**Below I ran the GEE approaches used in question 1 and reported out the QIC metrics. This will be used for comaparison in part d.**
+    
+```{r, eval=F}
+schizophrenia2$disord <-  as.numeric(schizophrenia2$disorder == "present")
+
+schizo_independence <- geeglm(disord ~ onset, data = schizophrenia2, family = "binomial", id = subject, 
+                 corstr = "independence")
+
+
+schizo_exchangeable <- geeglm(disord ~ onset, data = schizophrenia2, family = "binomial", id = subject, 
+                 corstr = "exchangeable")
+
+
+schizo_unstructured<- geeglm(disord ~ onset, data = schizophrenia2, family = "binomial", id = subject, 
+                 corstr = "unstructured")
+
+
+schizo_ARM <- geeglm(disord ~ onset, data = schizophrenia2, family = "binomial", id = subject, 
+                 corstr = "AR-M")
+
+schizo_statMdep <- geeglm(disord ~ onset, data = schizophrenia2, family = "binomial", id = subject,
+                     corstr = "stat_M_dep")
+
+cat("\nQIC for correlation structure 'schizo_independence': \n")
+QIC(schizo_independence)
+cat("\nQIC for correlation structure 'schizo_exchangeable': \n")
+QIC(schizo_exchangeable)
+cat("\nQIC for correlation structure 'schizo_unstructured': \n")
+QIC(schizo_unstructured)
+cat("\nQIC for correlation structure 'schizo_AR-M': \n")
+QIC(schizo_ARM)
+cat("\nQIC for correlation structure 'schizo_statMdep': \n")
+QIC(schizo_statMdep)
+```
+    
+
+    
+    c. mixed effects model (lmer) from previous chapter    
+
+**The lmer model shows an AIC of 265 and a BIC of 275. The model as a whole and the fixed effect are both statistically insignificant at an alpha of 0.05.**    
+  
+```{r}
+mixedeffect <- glmer(disorder ~ onset + (1 | subject), data = schizophrenia2,
+	 family = "binomial", na.action = na.omit)
+
+summary(mixedeffect)
+```
+    
+
+    
+    d. Is there a difference? What model(s) work best? Describe your results.
+
+**The models have pretty similar AIC and QIC scores. The lmer model AIC (265) is slightly lower than all the QIC scores, and of the GEE structures the unstructured and AR-M model had the lowest QIC scores at 267.59. I would choose the lmer model due to its lower AIC score**
+

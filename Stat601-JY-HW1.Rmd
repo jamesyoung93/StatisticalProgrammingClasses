@@ -1,0 +1,336 @@
+---
+title: "Homework 1"
+author: "James Young"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+Collaborators: None
+References: Stack Overflow
+
+Please do the following problems from the text book R Handbook and stated.
+
+```{r}
+library(HSAUR3)
+library(ggplot2)
+library(GGally)
+```
+
+1. Question 1.1, pg. 23 in Handbook \textit{this question will require you to make some assumptions. List your assumptions and how you interpreted the question.}
+Calculate the median profits for the companies in the US as well as UK, France, and Germany.
+
+
+Assumptions: Each company belongs to one unique country and only companies with reported profits are used.
+
+```{r}
+#subset and aggregate by mean
+tmp <- subset(Forbes2000, 
+              country %in% c("United Kingdom", "Germany", "France", "United States"))
+p <- aggregate( profits ~ country, data=tmp, FUN=median, na.rm = T)
+p
+```
+The data frame was first subsetted to the desired countries then aggregated to find the median profit by country.
+
+
+2. Question 1.2, pg. 23 in Handbook
+Find all German companies with negative profit.
+
+```{r}
+#subset by germany and find profit less than 0
+attach(Forbes2000)
+NegativeGermany = name[country == "Germany"][which(profits[country == "Germany"]<0)]
+NegativeGermany
+```
+
+I subsetted by countrys from Germany with profits less than zero.
+
+
+3. Question 1.3, pg. 23 in Handbook
+To which business category do most of the bermuda companies belong?
+```{r}
+#subset by bermuda and sort by category taking top category
+Bermuda = subset(Forbes2000, country == "Bermuda")
+Bermuda = sort(table(Bermuda$category),decreasing = T)
+Bermuda[1]
+```
+
+In Bermuda, most companies are insurance companies as found by subsetting and sorting. Maybe due to hurricances?
+
+
+4. Question 1.4, pg. 23 in Handbook
+For the 50 companies in the forbes dataset with highest profits, plot sales against assets
+
+```{r}
+# order top 50 and then plot sales against assets
+top50= Forbes2000[order(profits,decreasing = TRUE),]
+top50=top50[1:50,]
+plot(sales ~ assets , data=top50,xlab="Assets", ylab="Sales",main=" Sales Vs Assets for Top 50 Countries")
+
+
+ggplot(top50, aes(x=assets, y=sales))+geom_point()+ labs(x = "Assets",
+      y = "Sales",title = "Sales Vs Assets for Top 50 Countries")
+```
+I sorted by profit and took the top 50 results and plotted sales against assets. Maybe a better pattern would be seen with color coding the categorical business types or by country.
+
+
+
+5. Question 1.5, pg. 23 in Handbook
+Find the average value of sales for the companies in each country in the Forbes data set, and find the number of companies in each country with profits above 5 billion US dollars.
+
+
+```{r}
+#Calculate the mean of sales for each country 
+means = tapply(sales, country, mean)
+means
+
+#subset of dataset by requested profits and frequency of countries above the threshold 
+prof5b = Forbes2000[which(Forbes2000$profits > 5),]
+freq5b<-data.frame(table(prof5b$country))
+
+#countries with campanies above 5 billion
+freq5b<-freq5b[freq5b$Freq > 0,]
+freq5b
+```
+First I took the mean of sales and had the readouton a by country basis. Next I found the all countries with a company with more than 5 billion profit and quantified how many there were. The United States has the most with 10.
+
+6. Question 2.1, pg. 39 in Handbook (see Chapter 6 of R Graphcis Cookbook for GGPlot)
+Find... 1. The split of the 4 different spending groups based on the total expenditure (Do those that spend more over all have a different spending habit or is the distribution fairly similar to those that spend less); 2. Does the relationship between expenditures differ between the males and females?
+
+
+```{r}
+attach(household)
+household_ratio = household
+household_ratio$total = housing + food + goods + service
+household_ratio$housing = household$housing/household_ratio$total
+household_ratio$food = household$food/household_ratio$total
+household_ratio$goods = household$goods/household_ratio$total
+household_ratio$service = household$service/household_ratio$total
+household_ratio$row = row.names(household)
+household_ratio = household_ratio[-6]
+detach(household)
+#plot with r and ggplot
+library(reshape)
+attach(household_ratio)
+household_long = melt(household_ratio, id.vars = c("row", "gender"))
+males = subset(household_long, gender == "male")
+females = subset(household_long, gender == "female")
+par(mfrow=c(1,2))
+boxplot(value~variable, data = males,
+        xlab = "Expenditure", ylab = "Ratio of total expenses", main = "Expenses of Males")
+boxplot(value~variable, data = females,
+        xlab = "Expenditure", ylab = "Ratio of total expenses", main = "Expenses of Females")
+gends = c("male", "female")
+ggplot(household_long, aes(x=variable, y=value))+ geom_boxplot()+ 
+    ggtitle("Expenses")+ xlab("Expenditure")+ ylab("Ratio of total expenses")+
+    facet_grid(rows = vars(gender))
+detach(household_ratio)
+```
+First I summed up the individual expenditures to make a total and used this to make ratios of the spending. Women looked to be more variable in spending on housing and goods while men looked more variable on food. Between men and women, both seemed tospend a higher portion on goods if they had higher overall spending. Both men and women were pretty consistent on service spendingratio despite total expenditures.
+
+
+
+
+
+7. Question 2.3, pg. 41 in Handbook (see Chapter 6 of R Graphcis Cookbook for GGPlot)
+Construct side-by-side box plots for the data for the different age groups. Comment on what the plot tells about the data.
+
+```{r}
+suicide = suicides2
+colnames(suicide)[1] = "25-34"
+colnames(suicide)[2] = "35-44"
+colnames(suicide)[3] = "45-54"
+colnames(suicide)[4] = "55-64"
+colnames(suicide)[5] = "65-74"
+attach(suicide)
+
+#plotting mortality rates by age
+suicide$Country = row.names(suicide)
+long_suicide = melt(suicide, id.vars = "Country")
+boxplot(value~variable, data=long_suicide,
+xlab = "Age", ylab = "Rate of Mortality", main="Suicide per 100,000 in Male Population")
+ggplot(long_suicide, aes(x=variable, y=value))+ geom_boxplot()+ ggtitle("Suicides per 100,000 Male Population")+
+xlab("Age Group")+ ylab("Rate of Mortality")
+
+```
+We see an overall trend of increasing mortality by suicide as age goes up. age 55-64 shows the largest variation suggesting there may be a demographic shift occuring in that bin.
+
+
+8. Using a single R expression, calculate the median absolute deviation, $1.4826\cdot median|x-\mu|$, where $\mu$ is the sample median. Use the dataset \textbf{chickwts}. Use the R function mad() to verify your answer.
+```{r}
+#Make formula
+1.4826 * median(abs(chickwts$weight-median(chickwts$weight)))
+#Check formula using mad()
+mad(chickwts$weight)
+
+```
+
+Both the formula I made and the base r method showed the same results showing that it worked.
+
+
+10. Using the data matrix \textbf{state.x77}, find the state with the minimum per capita income in the New England region as defined by the factor \textit{state.division}. Use the vector \textit{state.name} to get the state name.
+
+```{r}
+state = state.x77
+state = as.data.frame(state)
+#add state division to state df
+state$division = state.division
+#add state name to state df
+state$name = state.name
+
+NewEng = subset(state, division == "New England")
+#order by income and print top state
+NewEng = NewEng[order(NewEng$Income),]
+NewEng$name[1]
+
+```
+After creating the new columns, subsetting by New England division and ordering income, the top result was Maine.
+
+11. Use subscripting operations on the dataset \textbf{Cars93} to find the vehicles with highway mileage of less than 25 miles per gallon (variable \textit{MPG.highway}) and weight (variable \textit{Weight}) over 3500lbs. Print the model name, the price range (low, high), highway mileage, and the weight of the cars that satisfy these conditions.
+
+```{r}
+library(MASS)
+head(Cars93)
+#selecting cars with mpg less than 25 and wt greater than 3500
+car_output=Cars93[Cars93$MPG.highway<25 & Cars93$Weight>3500,]
+##selecting the only required columns 
+car_output=car_output[,c(2,4,6,8,25)]
+print(car_output)
+
+```
+After subsetting by the required paramaters the resulting tables were created (above).
+
+12. Form a matrix object named \textbf{mycars} from the variables \textit{Min.Price, Max.Price, MPG.city, MPG.highway, EngineSize, Length, Weight} from the \textbf{Cars93} dataframe from the \textbf{MASS} package. Use it to create a list object named \textit{cars.stats} containing named components as follows:
+
+    a) A vector of means, named \textit{Cars.Means}
+    
+    b) A vector of standard errors of the means, named \textit{Cars.Std.Errors}
+    
+```{r}
+##creating mycars
+cars=Cars93[,c(4,6,7,8,12,19,25)]
+
+
+#a. creating Cars.Means
+Cars.Means=c(mean(cars$Min.Price),mean(cars$Max.Price),mean(cars$MPG.city),mean(cars$MPG.highway),mean(cars$EngineSize),mean(cars$Length),mean(cars$Weight))
+print(Cars.Means)
+
+#b. creating Cars.Std.Errors
+Std.Errors <- function(x){
+  sd(x, na.rm=TRUE) / sqrt(length(x[!is.na(x)]))
+}
+
+Cars.Std.Errors<-c(Std.Errors(cars$Min.Price),Std.Errors(cars$Max.Price),Std.Errors(cars$MPG.city),Std.Errors(cars$MPG.highway),Std.Errors(cars$EngineSize),Std.Errors(cars$Length),Std.Errors(cars$Weight))
+Cars.Std.Errors
+
+```
+First I limited the df to the desired columns, then I took the means, made a function for standard error, and finished by taking the standard errors as requested.
+
+    
+13. Use the \texttt{apply()} function on the three-dimensional array \textbf{iris3} to compute:
+
+    a) Sample means of the variables \textit{Sepal Length, Sepal Width, Petal Length, Petal Width}, for each of the three species \textit{Setosa, Versicolor, Virginica}
+    
+    b) Sample means of the variables \textit{Sepal Length, Sepal Width, Petal Width} for the entire data set.
+    
+```{r}
+#a) take mean by metric and plant species
+apply(iris3, c(3,2), mean)
+
+
+#b) take mean by metric only regardless of species
+apply(iris3, 2, mean)
+
+
+```
+Both of the above find the means of characteristics of iris flowers but (a) finds it for each species where (b) is less specific and finds the means for all given data regardless of species.
+    
+14. Use the data matrix \textbf{state.x77} and the \texttt{tapply()} function to obtain:
+
+    a) The mean per capita income of the states in each of the four regions defined by the factor \textit{state.region}
+    
+    b) The maximum illiteracy rates for states in each of the nine divisions defined by the factor \textit{state.division}
+    
+    c) The number of states in each region
+    
+    
+```{r}
+##using "state" from previous questions
+
+#a 
+state$Region = state.region
+tapply(state$Income, state$Region, mean)
+
+#b
+tapply(state$Illiteracy, state$division, mean)
+
+#c
+tapply(state$name, state$Region, length)
+
+
+
+```
+West South Central had the highest income while the south has the most states.
+    
+15. Using the dataframe \textbf{mtcars}, produce a scatter plot matrix of the variables \textit{mpg, disp, hp, drat, qsec}. Use different colors to identify cars belonging to each of the categories defined by the \textit{carsize} variable in different colors.
+
+```{r}
+
+#define the carsizes by weight 
+carsize=cut(mtcars[,"wt"], breaks = c(0, 2.5, 3.5, 5.5),labels = c("Compact", "Midsize", "Large"))
+
+#making a new data with carsize column
+newcar=data.frame(mtcars$mpg, mtcars$disp, mtcars$hp, mtcars$drat, mtcars$qsec, carsize)
+
+#plotting mpg, disp, hp, drat, qsec 
+pairs(newcar[,1:5], pch=21,bg=c("red", "green", "blue") [newcar$carsize])
+
+#ggplot version
+ggpairs(newcar[,1:5], mapping = ggplot2::aes(color = newcar$carsize))
+    
+```
+Plots were done with pairs and ggpairs and color coding by car size.Some correlations can be seen that make sense such as horse power rissing with enginge size and pmg falling with engine size. Both graphs are equally visually informative in my opinion but the ggpairs graph gives more information such as histograms and actual correlation numbers.
+
+
+
+16. Use the function \texttt{aov()} to perform a one-way analysis of variance on the \textbf{chickwts} data with \textit{feed} as the treatment factor. Assign the result to an object named \textit{chick.aov} and use it to print an ANOVA table.
+
+
+```{r}
+wtanova=aov(chickwts$weight~chickwts$feed)
+chick.aov=summary(wtanova)
+chick.aov
+
+```
+We can see that the feed type has a highly statistically significant effect on weight and it comes between feeds and not within feeds.
+
+
+17. Write an R function named \texttt{ttest()} for conducting a one-sample t-test. Return a list object containing the two components: 
+
+    - the t-statistic named T;
+    
+    - the two-sided p-value named P.
+    
+
+    
+Use this function to test the hypothesis that the mean of the \textit{weight} variable (in the \textbf{chickwts} dataset) is equal to 240 against the two-sided alternative. \textit{For this problem, please show the code of function you created as well as show the output. }
+
+```{r}
+#write the function
+ttest = function(x, mu){
+    m = mean(x)
+    std = sd(x)
+    n = length(x)
+    t = (m - mu)/(std/sqrt(n))
+    p = 2*pt(-abs(t), df=n-1)
+    return(list("t" = t, "p" = p))
+}
+#use the function
+ttest(chickwts$weight, 240)
+
+```
+It looks a p <0.05 is the result showing that we reject the null hypothesis and the weight in our dataset is different from the assumed null 240.
+
+    

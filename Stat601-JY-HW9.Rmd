@@ -1,0 +1,289 @@
+---
+title: "Homework 9"
+author: "James Young"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+Resources: Stack Overflow
+
+Libraries: library(gridExtra)
+library(gee)
+library(lme4)
+library(Matrix)
+library(multcomp)
+library (HSAUR3)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+
+
+```{r}
+library(gridExtra)
+library(gee)
+library(lme4)
+library(Matrix)
+library(multcomp)
+library (HSAUR3)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+
+
+1. Following up with the Beat the Blues data from the video (package HSAUR3) do the following
+
+      a. Construct boxplots to compare the factor variable \textbf{drug} in an analogous way to how we constructed boxplots in the video for the treatment variable. Discuss the results. 
+      
+**Below I plotted the Beck Depression Inventory measurements of two groups, one group taking drugs and the other not taking drugs. The measurements were taken over a time series. Both groups showed a decrease in BDI over time, however, the group taking drugs showed a more pronounced decrease and presented less variability. **
+      
+```{r}
+data("BtheB", package = "HSAUR3")
+BtheB$subject <- factor(rownames(BtheB))
+nobs <- nrow(BtheB)
+BtheB_long <- reshape(BtheB, idvar = "subject",
+                      varying = c("bdi.2m", "bdi.3m", "bdi.5m", "bdi.8m"),
+                      direction = "long")
+BtheB_long$time <- rep(c(2, 3, 5, 8, rep(nobs, 4)))
+names(BtheB_long)[names(BtheB_long) == "treatment"] <- "trt"
+layout(matrix(1:2, nrow = 1)) 
+
+DrugNo<-subset(BtheB,drug=="No")[,grep("bdi",names(BtheB))]
+boxplot(DrugNo, main ="No Drug", ylab= "BDI", xlab = "Time (in months)" , names = c(0,2,3,5,8), "ylim =  ylim")
+
+DrugYes<-subset(BtheB,drug=="Yes")[,grep("bdi",names(BtheB))]
+boxplot(DrugYes, main ="Taking Drug", ylab= "BDI", xlab = "Time (in months)" , names = c(0,2,3,5,8), "ylim =  ylim")
+
+labels <- c('Yes'='Yes Drug','No'='No Drug')
+
+ BtheB %>%
+  gather(BDI_Type,BDI_Value, 4:8) %>%
+  mutate(BDI_Type = ifelse(BDI_Type == 'bdi.pre','0',BDI_Type),
+         BDI_Type = factor(gsub(BDI_Type,pattern="[[:alpha:]]|[[:punct:]]",replacement=''))) %>%
+  ggplot(aes(x=BDI_Type,y=BDI_Value)) +
+  geom_boxplot() +
+  facet_grid(.~drug,labeller =  as_labeller(labels)) +
+  labs(title='Anti-Depressant Treatment',
+       x='Time (in months)',
+       y='BDI')
+```
+      
+
+      b. Repeat (a) for the \textbf{length} variable. Discuss the results.
+      
+**It appears that BDI levels drop faster in patients experiencing depression for less than 6 months compared to patients experiencing depression for longer than 6 months. This makes sense, considering BDI is a measurement associated with depression.**
+      
+```{r}
+layout(matrix(1:2, nrow = 1))
+lengthlow<-subset(BtheB,length=="<6m")[,grep("bdi",names(BtheB))]
+boxplot(lengthlow, main ="Length<6m", ylab= "BDI", xlab = "Time (in months)")
+lengthhigh<-subset(BtheB,length==">6m")[,grep("bdi",names(BtheB))]
+boxplot(lengthhigh, main ="Length>6m", ylab= "BDI", xlab = "Time (in months)")
+
+labels <- c('>6m'='Length>6m',
+            '<6m'='Length<6m')
+ BtheB %>%
+  gather(BDI_Type,BDI_Value, 4:8) %>%
+  mutate(BDI_Type = ifelse(BDI_Type == 'bdi.pre','0',BDI_Type),
+         BDI_Type = factor(gsub(BDI_Type,pattern="[[:alpha:]]|[[:punct:]]",replacement=''))) %>%
+  ggplot(aes(x=BDI_Type,y=BDI_Value)) +
+  geom_boxplot() +
+  facet_grid(.~length,labeller =  as_labeller(labels)) +
+  labs(title='Length of Current Episode of Depression',
+       x='Time (in months)',
+       y='BDI')
+```
+      
+
+      c. Use the \textit{lm} function to fit a model to the Beat the Blues data that assumes that the repeated measurements are independent. Compare the results to those from fitting the random intercept model \textit{BtheB\_lmer1} from the video.
+      
+**The linear model has a lower AIC than the random model and higher BIC. The chi-squared test shows the linear model is the more predictive model below an alpha of 0.05.**
+      
+```{r}
+BtheB$subject <- factor(rownames(BtheB))
+btb <- BtheB %>%
+  gather(time,bdi, 5:8) %>%
+  mutate(time = as.numeric(gsub(time,pattern="[[:alpha:]]|[[:punct:]]",replacement='')))
+
+
+BtheB_lm1 <- lm(bdi ~ bdi.pre + time + treatment + drug + 
+                    length +  subject, data = btb)
+
+BtheB_lmer1 <- lmer(bdi ~ bdi.pre + time + treatment + drug + 
+                      length + (1 | subject), data = btb, 
+                    REML = FALSE, na.action = na.omit)
+
+anova(BtheB_lmer1,BtheB_lm1)
+```
+      
+
+      d. Investigate and discuss whether there is any evidence of an interaction between treatment and time for the Beat the Blues data.
+      
+**A linear mixed effect model shows no statistically significant interaction effect between time and treatment at alpha = 0.05. However, the linear model does show a significant interaction between time and treatment at alpha = 0.05. Whether or not to include the interaction in the linear model could be further addressed by checking how it affects AIC.**
+      
+```{r}
+BtheB_lmer3 <- lmer(bdi ~ bdi.pre + time + trt + drug + 
+                      length + time*trt + (1 | subject), data = BtheB_long, 
+                    REML = FALSE, na.action = na.omit)
+
+BtheB_lm1 <- lm(bdi ~ bdi.pre + time*treatment + drug + 
+                    length +  subject, data = btb)
+summary(BtheB_lmer3)
+summary(BtheB_lm1)
+```
+      
+
+      e. Construct a plot of the mean profiles of both treatment groups in the Beat the Blues data, showing also standard deviation bars at each time point.
+      
+```{r}
+    tau <- subset(BtheB, treatment == "TAU")[,
+                                             grep("bdi", names(BtheB))]
+    
+    btheb <- subset(BtheB, treatment == "BtheB")[,
+                                                 grep("bdi", names(BtheB))]
+
+ tau.mean = colMeans(tau, na.rm = TRUE)
+    tau.sd = apply(tau, 2, function(x) sd(x, na.rm = TRUE))
+    
+    btb.mean = colMeans(btheb, na.rm=TRUE)
+    btb.sd = apply(btheb, 2, function(x) sd(x, na.rm=TRUE))
+    
+    tau_plot = data.frame(
+      time = as.factor(c(0,2,3,5,8)),
+      means = tau.mean,
+      sd = tau.sd
+    )
+    btb_plot = data.frame(
+      time = as.factor(c(0,2,3,5,8)),
+      means = btb.mean,
+      sd = btb.sd
+    )
+    
+        layout(matrix(1:2, ncol = 2))
+    tau_bar = barplot(height=tau_plot$means,
+            names.arg = tau_plot$time,
+            beside=true, las=2,
+            ylim=c(0,40), cex.names=0.75, xaxt="n",
+            main="Usual Treatment",
+            xlab="Time (in months)", ylab="BDI",
+            border="black", axes=TRUE)
+    text(x=tau_bar, labels=tau_plot$time, y=par("usr")[3]-2, adj=1, xpd=TRUE)
+    arrows(tau_bar, tau_plot$means - tau_plot$sd, tau_bar, tau_plot$means + tau_plot$sd, lwd=1.5, angle=90,code=3, length=0.05)
+    btb_bar = barplot(height=btb_plot$means,
+            names.arg = btb_plot$time,
+            beside=true, las=2,
+            ylim=c(0,40), cex.names=0.75, xaxt="n",
+            main="Beat the Blues",
+            xlab="Time (in months)", ylab="BDI",
+            border="black", axes=TRUE)
+    text(x=tau_bar, labels=tau_plot$time, y=par("usr")[3]-2, adj=1, xpd=TRUE)
+    arrows(tau_bar, tau_plot$means - tau_plot$sd, tau_bar, tau_plot$means + tau_plot$sd, lwd=1.5, angle=90,code=3, length=0.05)
+
+    t1 = ggplot(tau_plot) +
+      geom_bar(aes(x=time, y=means), stat="identity")+
+      geom_errorbar(aes(x=time, ymin=means-sd, ymax=means+sd), width=0.4, size=1)+
+      ggtitle("Usual Treatment") +ylim(0,40) +xlab("Time (in months)") +ylab("BDI")
+    b1 = ggplot(btb_plot) +
+      geom_bar(aes(x=time, y=means), stat="identity")+
+      geom_errorbar(aes(x=time, ymin=means-sd, ymax=means+sd), width=0.4, size=1)+
+      ggtitle("Beat the Blues") +ylim(0,40) +xlab("Time (in months)") +ylab("BDI")
+    grid.arrange(t1, b1, ncol=2)
+```
+      
+  
+  
+2. Consider the \textbf{phosphate} data from the package HSAUR3. This data shows the plasma inorganic phosphate levels for 33 subjects, 20 of whom are controls and 13 of whom have been classified as obese (Davis, 2002). Perform the following on this dataset
+ 
+      a. Construct boxplots by group and discuss. 
+      
+**The control group showed an earlier dip in phosphate levels and also an earlier recovery of phosphate levels compared to the obese group.**
+      
+```{r}
+data(phosphate)
+ph=phosphate
+
+Control=subset(ph,as.numeric(group)==1)[,grep("t",names(ph))]
+Obese=subset(ph,as.numeric(group)==2)[,grep("t",names(ph))]
+
+
+layout(matrix(1:2,nrow=1))
+boxplot(Control,main="control",xlab="Time (hour)",
+        ylab="Phosphate Level",col="blue",
+        names=c(0,0.5,1,1.5,2,3,4,5))
+boxplot(Obese,main="obese",xlab="Time (hour)",
+        ylab="Phosphate Level",col="red",
+        names=c(0,0.5,1,1.5,2,3,4,5))
+
+phosphate %>%
+  gather(time,phosphate_level, 2:9) %>%
+  mutate(time = factor(gsub(time,pattern="[[:alpha:]]",replacement=''))) %>%
+ggplot(aes(x=time,y=phosphate_level)) +
+  geom_boxplot() +
+  facet_grid(.~group) +
+  labs(title='Phosphate Data ~ Group Phosphate Levels By Time',
+       x='Time (in hours)',
+       y='Phosphate Level')
+```
+      
+   
+      b. Produce separate plots of the profiles of the individuals in each group.
+      
+**We can see below that there is a lot of variability between individuals, even within groups, when it comes to their drop in phosphate and subsequent recovery of the the time period recorded.**
+      
+```{r}
+par(mfrow=c(1,2))
+rg<-range(phosphate[,-1]) 
+plot(c(1,8),c(rg),type="n", main= "control", xlab="Time(hour)", ylab= "Individuals") 
+for(i in 1:sum(phosphate$group=="control")){
+  lines(1:8, phosphate[i,-1]) } 
+rg<-range(phosphate[,-1])   
+plot(c(1,8),c(rg),type="n", main= "obese", xlab="Time(hour)", ylab= "Individuals")
+for(i in 1:sum(phosphate$group=="obese")){ lines(1:8, phosphate[i+20,-1]) } 
+
+phosphate$subject <- factor(rownames(phosphate))
+
+phosphate %>%
+  gather(time,phosphate_level, 2:9) %>%
+  mutate(time = factor(gsub(time,pattern="[[:alpha:]]",replacement=''))) %>%
+ggplot(aes(x=time,y=phosphate_level)) +
+  geom_line(aes(group=subject,color=subject),size=1) +
+  facet_grid(.~group) +
+  labs(title='Phosphate Data ~ Group Phosphate Levels By Time & Subject',
+       x='Time (in hours)',
+       y='Phosphate Level')
+```
+      
+    
+      c. Guided by how these plots fit, which linear mixed effects models do you think might be sensible? (Hint:                Discuss intercept and slope, intercept and interaction).
+    
+    
+**Based on the above graphs, I would try to create a model that considers individual differences, differences in starting phosphate, and what appears to be an interaction between time and group. Phosphate starting at time zero will help with the intercept and possibly the slope as it appears individuals with higher starting phosphate experience a steeper rate of loss.**
+**My model will be p_level~time:group+t0+(1|subject).**
+    
+    
+      d. Convert the data to long version and fit the model of your choice and discuss the results. 
+      
+      
+```{r}
+a=ph[,c(3:9)]
+
+ph_long=reshape(ph,idvar="subject",v.names="p_level",
+                varying=list(names(a)),direction="long")
+
+ph_non_inter=lmer(p_level~time*group+t0+(1|subject),data=ph_long,
+                  REML=FALSE,na.action=na.omit)
+
+print(summary(ph_non_inter))
+#print(cftest(ph_cept_slope_inter))
+#anova(ph_inter,ph_non_inter,ph_cept_slope,ph_cept_slope_inter)
+```
+      
+**The model has relatively low AIC compared to previous models in this assignment, however thos models were fitted on different data with different parameters so that is not a noteworthy comparison. **

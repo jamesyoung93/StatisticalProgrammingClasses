@@ -1,0 +1,157 @@
+---
+title: 'Stat601 Final Problem 2: Microtus'
+author: "James Young"
+date: "December 16, 2019"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=F,warning=F)
+```
+
+```{r}
+set.seed(123)
+library(boot)
+library(ggplot2)
+library(gridExtra)
+library(Flury)
+library(GGally)
+library(knitr)
+data(microtus)
+```
+
+## The Problem
+
+Given a dataset, which will be further characterized and analyzed below, I have been asked to create a model that can distinguish between two species of microtus. The two species are multiplex and subterraneus. I will create a general linear model for a binary response, a logistic regression, selecting for variables that create a model with the best predictive power at a tradeoff for AIC.
+
+
+## The Data
+
+The data contains the response factor *Group* and 8 predictor variables which are integers on a continuom including *M1Left*, *M2Left*, *M3Left*, *Foramen*, *Pbone*, *Length*, *Height*, and *Rostrum*. We can see the *Group* variable has 43 known multiplex species, 46 known subterraneus, and 199 unknown species. The input variables pertain to measurements of the skull, which may help discern the species the skull belonged to. Looking further below, we can see that some variables, such as *M1Left* and *Rostrum* have some visible separation between multiplex and subterraneus species and other variables such as *Foramen* that seem visually identical between the species. The distribution of the unknown species measurements hit that it is probably a fairly balanced mix between subterraneus and multiplex.
+
+```{r}
+kable(summary(microtus))
+
+```
+
+
+
+```{r}
+ggscatmat(microtus, color="Group", alpha=0.8)
+```
+
+
+
+```{r}
+microtus <- subset(microtus, Group == "multiplex" | Group == "subterraneus")
+```
+
+```{r}
+microtus2 = microtus
+microtus2$Group <- as.numeric(microtus$Group)
+microtus2$Group <- as.factor(microtus2$Group)
+```
+
+## The Model
+
+To build the model, first I must remove all of the unknown samples. We are left with samples previously determined to be subterraneus or multiplex by genomic testing. Then I ran a logistic regression with all 8 variables as input variables and removed variables to get to the lowest AIC using the step function. This formula was "glm(Group~M1Left+M3Left+Foramen+Length+Height, binomial)".
+I ran this through 5-fold cross-validation to determine the error rate.
+
+
+
+```{r include=FALSE}
+set.seed(123)
+logmod1 <- glm(Group ~., data = microtus2, binomial)
+temp = step(logmod1)
+
+```
+
+```{r}
+summary(temp)
+```
+
+
+```{r}
+set.seed(123)
+cost <- function(r, pi = 0) mean(abs(r-pi) > 0.5)
+StepModel <- cv.glm(microtus2, logmod1,cost, 5)
+
+
+```
+
+## Taking Significant Variables
+I will take M1Left as it is the only statistically significant variable at alpha = 0.05 and I will also take Foramen as it is close 0.05. I will use these two variables to make another logistic regression model, run it through 5-fold cross-validation, and compare the results for model selection. This new model will be called Step Significant and be of the form "glm(Group ~M1Left+Foramen, binomial)"
+
+```{r}
+set.seed(123)
+logmod2 <- glm(Group ~M1Left+Foramen, data = microtus2, binomial)
+
+cost <- function(r, pi = 0) mean(abs(r-pi) > 0.5)
+StepSignificant <- cv.glm(microtus2, logmod2,cost, 5)
+StepSignificant$delta
+```
+
+## Model Selection
+The Step model and the Step Significant model both had similar AIC, with the Step model being slightly lower. However, the step significant model had a lower error rate so I am choosing that for my predictive model. The seeds are set in the Rmd file so it is reproducible.
+
+
+```{r}
+a <- rbind(temp$aic, logmod2$aic)
+b <- rbind(StepModel$delta, StepSignificant$delta)
+c <- rbind("Step Model", "Step Model Significant")
+d <- as.data.frame(cbind(c,a,b))
+d$Model <- d$V1
+d$AIC <- d$V2
+d$Error1 <- d$V3
+d$Error2 <- d$V4
+d$V1 <- NULL
+d$V2 <- NULL
+d$V3 <- NULL
+d$V4 <- NULL
+kable(d)
+
+```
+
+##Predictions
+
+When binarized, multiplex becomes "0" and subterraneus becomes "1". My predictive model, when split at a probability threshold of 0.5, predicts there are 121 multiplex and 78 subterraneus samples. Based on the error rate, this should be a balanced prediction and we can expect to be wrong about 7% of the time. The predictions have also been submitted as a CSV file. The unknown samples follow the same descending order they do from the original dataset.
+
+
+```{r}
+data("microtus")
+microtus3 <- subset(microtus, Group == "unknown")
+p2 <- predict(logmod2, microtus3, type = 'response')
+options(digits = 2)
+p2 <- as.data.frame(p2)
+p2$Predictions <- ifelse (p2$p2 > 0.5,1,0)
+p2$Predictions <- as.factor(p2$Predictions)
+summary(p2$Predictions)
+```
+
+```{r}
+x <- as.data.frame(cbind(as.character(microtus3$Group), (as.numeric(p2$Predictions)-1)))
+#write.csv(x, file = "C://data/microtuspredictions.csv")
+```
+
+
+## Conclusion
+
+The model made here, using *M1Left* and *Foramen* as input variables to predict wheter a microtus was multiplex or subterraneus resulted in predictive ability with an error rate of approximately 0.07 or 7% using 5-fold cross validation. This suggests the model will generalize fairly well as k-fold cross validation is generally considered a robust predictor of the generalized ability of a model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

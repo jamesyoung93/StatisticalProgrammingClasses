@@ -1,0 +1,390 @@
+---
+title: "Homework 8"
+author: "James Young"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=F,warning=F,echo=F,fig_height=10,fig_width=7,cache = F)
+```
+
+
+Please do the following problems from the text book R Handbook and stated.
+
+Resources: Stack Overflow
+
+The following libraries were used:
+library(HSAUR3)
+library(ggplot2)
+library(quantreg)
+library(gamlss.data)
+library(lattice)
+library(TH.data)
+library(rpart)
+library(partykit)
+library(gridExtra)
+
+```{r}
+library(HSAUR3)
+library(ggplot2)
+library(quantreg)
+library(gamlss.data)
+library(lattice)
+library(TH.data)
+library(rpart)
+library(partykit)
+library(gridExtra)
+```
+
+
+1. Consider the {\textbf{clouds}} data from the {\textbf{HSAUR3}} package
+   
+    a) Review the linear model fitted to this data in Chapter 6 of the text book and report the model and findings. 
+    
+**Replicating the model from chapter 6, we see that rainfall is effected by the treatment of cloud seeding with suitability criterion. We see that rainfall has a significant increase when seeding takes place.**
+    
+```{r}
+set.seed(123)
+    
+data(clouds)
+    
+clouds_formula = rainfall ~ seeding + seeding:(sne + cloudcover + prewetness + echomotion) + time
+
+    
+clouds_lm = lm(clouds_formula, data = clouds)
+
+    
+message("Chapter 6 Model Summary")
+summary(clouds_lm)
+betastar = coef(clouds_lm)
+clouds_resid = residuals(clouds_lm)
+clouds_fitted = fitted(clouds_lm)
+psymb = as.numeric(clouds$seeding)
+plot(rainfall ~ sne, data = clouds, pch = psymb, xlab = "S-Ne criterion")
+abline(lm(rainfall~sne, data=clouds, subset= seeding == 'no'))
+abline(lm(rainfall~sne, data = clouds, subset = seeding == "yes"), lty = 2)
+legend("topright", legend = c("No seeding", "Seeding"), pch = 1:2, lty = 1:2, bty = "n")
+ggplot(clouds, aes(x=sne, y=rainfall, shape=seeding, color=seeding))+geom_point(size=2)+geom_smooth(method=lm,se=FALSE, fullrange=TRUE,size=.5)
+    ```
+
+    
+      
+    b) Fit a median regression model.
+    
+**To fit a median regression model we fit a line with tau = 0.5 (the median) with the same formula from part A looking for difference between seeding treatments.**
+ 
+```{r}
+set.seed(123)
+rq_seed= rq(clouds_formula, data = clouds, tau = 0.5)
+summary(rq_seed, se = "rank")$coef
+    
+plot(rainfall~sne, data=clouds, pch=psymb, xlab="S-Ne Criterion")
+abline(rq(rainfall~sne,data=clouds,tau=0.5,seeding== "no"))
+abline(rq(rainfall~sne,data=clouds,tau=0.5,seeding=="yes"),lty=2)
+legend("topright",legend=c("No seeding", "Seeding"), pch=1:2, lty=1:2, bty="n")
+
+    
+ggplot(clouds, aes(x=sne, y=rainfall, shape=seeding, color=seeding))+geom_point(size=3)+geom_smooth(method=rq,se=FALSE, fullrange=TRUE,size=.75)
+```
+   
+    
+      
+    c) Compare the two results. 
+    
+**Looking at the graphs from part A and part B we can see a difference in the slop of the line for the "no-seeding" treatment between the linear and median regression, showing there is variability as to the level of covariance between these two variables. We see a more consistent slope between the two models for the "seeded" treatment which makes this data seem more robust, possibly adding evidence to the effect of the "seeding" treatment. Comparing performance metrics, we see the linear regression out performs the median regression in MSE but is outperformed by the median regression in AIC and MAE, which makes sense considering the median regression focus on optimizing absolute residual error instead of least square error like a linear regression.**
+    
+```{r, echo=FALSE}
+set.seed(123)
+mod1a_no = lm(rainfall~sne, data=clouds, subset= seeding == 'no')
+mod1a_yes = lm(rainfall~sne, data = clouds, subset = seeding == "yes")
+mod1b_no = rq(rainfall~sne,data=clouds,tau=0.5,seeding== "no")
+mod1b_yes = rq(rainfall~sne,data=clouds,tau=0.5,seeding=="yes")
+    
+preds1a_no = predict(mod1a_no,type="response")
+preds1a_yes = predict(mod1a_yes,type="response")
+preds1b_no = predict(mod1b_no,type="response")
+preds1b_yes = predict(mod1b_yes,type="response")
+    
+obs1_no = subset(clouds, seeding == "no")$rainfall
+obs1_yes = subset(clouds, seeding == "yes")$rainfall
+```
+    
+
+    
+```{r, echo=FALSE}
+preds_6l = predict(clouds_lm, type="response")
+preds_6m = predict(rq_seed, type="response")
+obs_6 = clouds$rainfall
+    
+lin_med = data.frame("Chapt 6 Linear" = c(mean((preds_6l - obs_6)^2), 
+                                              AIC(clouds_lm),
+                                              mean(abs(preds_6l-obs_6))),
+                         "Chapt 6 Median" = c(mean((preds_6m - obs_6)^2),
+                                              AIC(rq_seed),
+                                              mean(abs(preds_6m-obs_6))))
+row.names(lin_med) = c("MSE","AIC","MAE")
+print(lin_med)
+```
+
+
+
+    
+2. Reanalyze the {\textbf{bodyfat}} data from the {\textbf{TH.data}} package. 
+
+    a) Compare the regression tree approach from chapter 9 of the textbook to median regression and summarize the different findings.
+
+**First I'll make the unpruned tree.**
+    
+```{r}
+
+set.seed(123)
+    
+data(bodyfat)
+    
+bdft_equation = DEXfat ~ age + waistcirc + hipcirc + elbowbreadth + kneebreadth
+    
+    
+bodyfatmod = rpart(bdft_equation, data = bodyfat, control = rpart.control(minsplit=10))
+    
+    
+plot(as.party(bodyfatmod), tp_args = list(id = FALSE))
+    
+```
+
+**Now I'll make the pruned tree optimizing for error. We can see there isn't a change in this case.**
+```{r}
+opt <- which.min(bodyfatmod$cptable[,"xerror"])
+cp <- bodyfatmod$cptable[opt, "CP"]
+bodyfatmod_prune <- prune(bodyfatmod, cp = cp)
+plot(as.party(bodyfatmod_prune), tp_args = list(id = FALSE))
+```
+
+**Finally, we will compare the models. We can see below that the tree models outperform median regression in the MSE metric by a considerable amount but the median regression is closer to tree performance with MAE metric which makes sense considering median regression focus on optimizing absolute residuals. However it looks like the tree still outperforms median regression in mean absolute error in this case.**
+
+```{r}
+#cat("MSE of tree using Chapter 9 equation without pruning: \n")
+bdft_pred = predict(bodyfatmod, newdata = bodyfat)
+bdft_mse = mean((bodyfat$DEXfat - bdft_pred)^2)
+bdft_mae = mean(abs(bodyfat$DEXfat-bdft_pred))
+    
+#cat("MSE of tree using Chapter 9 equation with pruning: \n")
+bdft_pred2 = predict(bodyfatmod_prune, newdata = bodyfat)
+bdft_mse2 = mean((bodyfat$DEXfat - bdft_pred2)^2)
+bdft_mae2 = mean(abs(bodyfat$DEXfat-bdft_pred2))
+    
+#cat("MSE of median regression of original equation: \n")
+bdft_med1= rq(bdft_equation, data = bodyfat, tau = 0.5)
+bdft_medpred1 = predict(bdft_med1, type="response")
+bdft_medmse1 = mean((bodyfat$DEXfat - bdft_medpred1)^2)
+bdft_medmae1 = mean(abs(bodyfat$DEXfat-bdft_medpred1))
+    
+tre_med = data.frame("Unpruned Tree" = c(bdft_mse, bdft_mae),
+                         "Pruned Tree" = c(bdft_mse2, bdft_mae2),
+                         "Median Regression" = c(bdft_medmse1, bdft_medmae1))
+row.names(tre_med) = c("MSE","MAE")
+print(tre_med)
+```
+
+
+    
+    b) Choose one independent variable. For the relationship between this variable and DEXfat, create linear regression quantile models for the 25%, 50% and 75% quantiles. Plot DEXfat vs that independent variable and plot the lines from the models on the graph. 
+    
+**Following the above instructions I chose to work with hipcirc which can be seen in the plot below. We see that higher percentiles have a steeper slope than lower percentiles when looking at hipcirc's covariation with DEXfat.**
+    
+```{r}
+set.seed(123)
+hip = rq(DEXfat ~ hipcirc, data = bodyfat, tau=c(0.25, 0.5, 0.75))
+summary(hip)
+    
+plot(DEXfat ~ hipcirc, data = bodyfat, xlab = "Hip Circumference")
+abline(rq(DEXfat ~ hipcirc, data = bodyfat, tau = 0.25),lty = 1)
+abline(rq(DEXfat ~ hipcirc, data = bodyfat, tau = 0.5), lty = 2)
+abline(rq(DEXfat ~ hipcirc, data = bodyfat, tau = 0.75),lty = 3)
+legend("topleft", legend = c("25%", "50%", "75%"), lty = 1:3, bty = "n")
+    
+med_reg2b = data.frame(t(coef(hip)))
+colnames(med_reg2b) = c("intercept","slope")
+qplot(x=hipcirc, y=DEXfat, data=bodyfat) + geom_abline(aes(intercept=intercept, slope=slope, linetype=row.names(med_reg2b)), data=med_reg2b)
+    
+```
+    
+    
+3. Consider {\textbf{db}} data from the lecture notes (package {\textbf{gamlss.data}}). Refit the additive quantile regression models presented ({\textbf{rqssmod}}) with varying values of $\lambda$ (lambda) in {\textbf{qss}}. How do the estimated quantile curves change?
+
+**As lambda increases the smoothness of the quantile lines increases. At Lambda of 0.1 we can see some undulation in the quantile lines but by lambda=10 it is pretty much smoothed out and we don't see any visually significant change after lambda = 10. Lamda acts as a penalty term in this case to smooth the lines of fit. I tried to make the base r plots into a grouped frame using par(mfrow) but struggled in this case. However, the ggplots could be easily organized using grid.arrange(). Also, the ggplot y-axis label is abbreviated to alleviate cluster.** 
+
+
+
+```{r}
+par(mfrow =c(3,2))
+set.seed(123)
+data(db)
+db2 <- db
+tau <- c(.03, .15, .5, .85, .97)
+#lambda 1
+rqssmod <- vector(mode = "list", length = length(tau))
+db2$lage <- with(db2, age^(1/3))
+for (i in 1:length(tau))
+  rqssmod[[i]] <- rqss(head ~ qss(lage, lambda = 0.1),
+                       data = db2, tau = tau[i])
+gage <- seq(from = min(db2$age), to = max(db2$age), length = 100)
+p <- sapply(1:length(tau), function(i) { predict(rqssmod[[i]],
+                                                 newdata = data.frame(lage = gage^(1/3)))
+})
+## Playing with the whole db data 
+pfun <- function(x, y, ...) {
+  panel.xyplot(x = x, y = y, ...)
+  apply(p, 2, function(x) panel.lines(gage, x))
+  panel.text(rep(max(db2$age), length(tau)),
+             p[nrow(p),], label = tau, cex = 0.9)
+  #panel.text(rep(min(db2$age), length(tau)),
+  #p[1,], label = tau, cex = 0.9)
+}
+xyplot(head ~ age, data = db2, main = "Lambda = 0.1", xlab = "Age (years)",
+       ylab = "Head circumference (cm)", pch = 16,
+       scales = list(x = list(relation = "free")),
+       layout = c(1, 1), col = rgb(.1, .1, .1, .1),
+       panel = pfun)
+panel = pfun
+
+#lambda 10
+rqssmod <- vector(mode = "list", length = length(tau))
+db2$lage <- with(db2, age^(1/3))
+for (i in 1:length(tau))
+  rqssmod[[i]] <- rqss(head ~ qss(lage, lambda = 10),
+                       data = db2, tau = tau[i])
+gage <- seq(from = min(db2$age), to = max(db2$age), length = 100)
+p <- sapply(1:length(tau), function(i) { predict(rqssmod[[i]],
+                                                 newdata = data.frame(lage = gage^(1/3)))
+})
+## Playing with the whole db data 
+pfun <- function(x, y, ...) {
+  panel.xyplot(x = x, y = y, ...)
+  apply(p, 2, function(x) panel.lines(gage, x))
+  panel.text(rep(max(db2$age), length(tau)),
+             p[nrow(p),], label = tau, cex = 0.9)
+  #panel.text(rep(min(db2$age), length(tau)),
+  #p[1,], label = tau, cex = 0.9)
+}
+xyplot(head ~ age, data = db2, main = "Lambda = 10", xlab = "Age (years)",
+       ylab = "Head circumference (cm)", pch = 16,
+       scales = list(x = list(relation = "free")),
+       layout = c(1, 1), col = rgb(.1, .1, .1, .1),
+       panel = pfun)
+panel = pfun
+
+#lambda 20
+rqssmod <- vector(mode = "list", length = length(tau))
+db2$lage <- with(db2, age^(1/3))
+for (i in 1:length(tau))
+  rqssmod[[i]] <- rqss(head ~ qss(lage, lambda = 20),
+                       data = db2, tau = tau[i])
+gage <- seq(from = min(db2$age), to = max(db2$age), length = 100)
+p <- sapply(1:length(tau), function(i) { predict(rqssmod[[i]],
+                                                 newdata = data.frame(lage = gage^(1/3)))
+})
+## Playing with the whole db data 
+pfun <- function(x, y, ...) {
+  panel.xyplot(x = x, y = y, ...)
+  apply(p, 2, function(x) panel.lines(gage, x))
+  panel.text(rep(max(db2$age), length(tau)),
+             p[nrow(p),], label = tau, cex = 0.9)
+  #panel.text(rep(min(db2$age), length(tau)),
+  #p[1,], label = tau, cex = 0.9)
+}
+xyplot(head ~ age, data = db2, main = "Lambda = 20", xlab = "Age (years)",
+       ylab = "Head circumference (cm)", pch = 16,
+       scales = list(x = list(relation = "free")),
+       layout = c(1, 1), col = rgb(.1, .1, .1, .1),
+       panel = pfun)
+panel = pfun
+
+#lambda 50
+rqssmod <- vector(mode = "list", length = length(tau))
+db2$lage <- with(db2, age^(1/3))
+for (i in 1:length(tau))
+  rqssmod[[i]] <- rqss(head ~ qss(lage, lambda = 50),
+                       data = db2, tau = tau[i])
+gage <- seq(from = min(db2$age), to = max(db2$age), length = 100)
+p <- sapply(1:length(tau), function(i) { predict(rqssmod[[i]],
+                                                 newdata = data.frame(lage = gage^(1/3)))
+})
+## Playing with the whole db data 
+pfun <- function(x, y, ...) {
+  panel.xyplot(x = x, y = y, ...)
+  apply(p, 2, function(x) panel.lines(gage, x))
+  panel.text(rep(max(db2$age), length(tau)),
+             p[nrow(p),], label = tau, cex = 0.9)
+  #panel.text(rep(min(db2$age), length(tau)),
+  #p[1,], label = tau, cex = 0.9)
+}
+xyplot(head ~ age, data = db2, main = "Lambda = 50", xlab = "Age (years)",
+       ylab = "Head circumference (cm)", pch = 16,
+       scales = list(x = list(relation = "free")),
+       layout = c(1, 1), col = rgb(.1, .1, .1, .1),
+       panel = pfun)
+panel = pfun
+
+#lambda 100
+rqssmod <- vector(mode = "list", length = length(tau))
+db2$lage <- with(db2, age^(1/3))
+for (i in 1:length(tau))
+  rqssmod[[i]] <- rqss(head ~ qss(lage, lambda = 100),
+                       data = db2, tau = tau[i])
+gage <- seq(from = min(db2$age), to = max(db2$age), length = 100)
+p <- sapply(1:length(tau), function(i) { predict(rqssmod[[i]],
+                                                 newdata = data.frame(lage = gage^(1/3)))
+})
+## Playing with the whole db data 
+pfun <- function(x, y, ...) {
+  panel.xyplot(x = x, y = y, ...)
+  apply(p, 2, function(x) panel.lines(gage, x))
+  panel.text(rep(max(db2$age), length(tau)),
+             p[nrow(p),], label = tau, cex = 0.9)
+  #panel.text(rep(min(db2$age), length(tau)),
+  #p[1,], label = tau, cex = 0.9)
+}
+xyplot(head ~ age, data = db2, main = "Lambda = 100", xlab = "Age (years)",
+       ylab = "Head circumference (cm)", pch = 16,
+       scales = list(x = list(relation = "free")),
+       layout = c(1, 1), col = rgb(.1, .1, .1, .1),
+       panel = pfun)
+panel = pfun
+
+
+a = ggplot(data = db, aes(y=head ,x= age))+geom_point()+geom_quantile(quantiles=tau,method = "rqss", lambda = 0.1)+ggtitle("Lambda=0.1")+xlab("Age (years)")+ylab("Head Circ.")
+
+b = ggplot(data = db, aes(y=head ,x= age))+geom_point()+geom_quantile(quantiles=tau,method = "rqss", lambda = 10)+ggtitle("Lambda=10")+xlab("Age (years)")+ylab("Head Circ.")
+
+c = ggplot(data = db, aes(y=head ,x= age))+geom_point()+geom_quantile(quantiles=tau,method = "rqss", lambda = 20)+ggtitle("Lambda=20")+xlab("Age (years)")+ylab("Head Circ.")
+
+d = ggplot(data = db, aes(y=head ,x= age))+geom_point()+geom_quantile(quantiles=tau,method = "rqss", lambda = 50)+ggtitle("Lambda=50")+xlab("Age (years)")+ylab("Head Circ.")
+
+e = ggplot(data = db, aes(y=head ,x= age))+geom_point()+geom_quantile(quantiles=tau,method = "rqss", lambda = 100)+ggtitle("Lambda=100")+xlab("Age (years)")+ylab("Head Circ.")
+library(gridExtra)
+
+grid.arrange(a, b, c, d, e, ncol =2)
+
+```
+
+
+  
+4. Read the paper by Koenker and Hallock (2001), posted on D2L. Write a one page summary of the paper. This should include but not be limited to introduction, motivation, case study considered and findings. 
+
+**Introduction**
+**The paper "Quantile Regression", written by Koenker and Hallock starts by describing the process of breaking populations into equal sized groups along a response variable. A quartile is four groups, a quintile is five groups, a decile is ten groups, and quantiles work in 1/100th increments. Quantiles use the Greek "tau" to represent the quantile an observation is in with the observation being of higher values than "tau" but lesser value than 1-"tau". The purpose of using quantiles in quantile regression is to minimize the absolute residual sum above and below a given "tau" while linear regression tries to minimize mean square error regardless of balance above or below a quantile.**
+
+**Motivation**
+**The motivation for quantile regression is demonstrated in the paper through the example of the association of income with food expenditure. Using a normal regression approach was biased by observations that were outliers. A quantile regression in this case could eliminate the bias introduced by the outliers by focusing on absolute residual errors.**
+
+**Case Study**
+**After introducting the previous example of the advantages in using median regression for certain examples, the paper got into what I consider their case study. The case was examining the association between infant birth weight and many factors. Having a low birth weight was defined in this case as a weight below 5 pounds and 9 ounces at time of birth. The distribution of weights created a long tail to the lower side. A mean regression would be skewed by these much lower weights even though they make up a relatively smaller portion of the population. Quantile regression, with its focus on minimizing absolute residual would more accurately reflect the median observation.**
+
+
+**Results/Findings**
+**The least square errors based regression found boys were born larger than girls on averag by ~100 grams. At the lowest quantiles the difference between boys and girls was almost half that difference, with boys being 45 grams larger. And at the highest quantiles boys were about 130 grams larger than girls, a larger difference than was seen in the least square errors estimate. The variability in birth weight distribution was explained better by quantile regression in this case than least square errors. Another major result was the difference in birth weights between mothers ethnicity with the difference between the infants of black and white mothers being about 300 grams at the lowest quantiles. Other factors found to be contributors were smoking, marital status, education level, and prenatal care. Most associations were better characterized by quantile regression than linear regression in this case due to variability in associations at different quantiles.**
+
+**Conclusion**
+**This paper demonstrated how data with long tails can skew the mean away from the median and cause problems with the reliability in regular linear regression. Many metrics follow these distributions with long tails, for example income. You may be told the average income in a given field is x amount of money and be lead to believe you have a good chance of making that much money. However, it is possible that the top performers in that field make incredibly more money than the median income and thus skew your expectations based on the mean. Median regression gives a more balanced view in cases where the distribution has outliers or long tails.**
+
+
