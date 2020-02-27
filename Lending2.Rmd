@@ -1,0 +1,1266 @@
+---
+title: "LendingClubEDA"
+author: "James Young"
+date: "November 8, 2019"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=F,warning=F)
+```
+
+```{r}
+library(ggplot2)
+library(party)
+library(partykit)
+library(lubridate)
+library(ROCR)
+library(pROC)
+library(earth)
+library(TH.data)
+library(GGally)
+library(ggplot2)
+library(mgcv)
+library(dplyr)
+library(tidyr)
+library(mboost)
+library(gamair)
+library(caret)
+library(mlbench)
+library(e1071)
+library(xgboost)
+library(data.table)
+library(mlr)
+library(stringr)
+library(coefplot)
+```
+
+## Exploratory Data Analysis
+
+
+
+```{r cars}
+setwd("C://data/")
+Lend <- read.csv("accepted_2007_to_2016.csv")
+```
+
+
+
+## Description of The Data
+
+**We have a dataset composed of roughly 1.3 million loan cases where each case is a row in the dataset. Each case has 110 variables in the original dataset, however many of these columns contain a lot of *NAs*, which will cause problems later for building our predictive models. We will start the data cleaning by removing any column that has more than 10% of rows filled with NA.**
+
+**After removing columns I removed any remaining rows (loan cases) that had any NA. This left us with 1.15 million rows and 88 columns (variables) as can be seen in the print out below.**
+
+```{r}
+Lend <- Lend[,colSums(is.na(Lend))<((nrow(Lend))/10)]
+Lend=na.omit(Lend)
+dim(Lend)
+```
+
+**Next we need to get rid of any data that we would not have privelage to at the time of investment, such as total received interest and other payment information. This information could only be known after the loan was in progress. This removes another 11 columns and leaves us with 77 columns now.**
+
+```{r}
+Lend$id <- NULL
+Lend$out_prncp_inv <- NULL
+Lend$total_pymnt_inv <- NULL
+Lend$total_rec_prncp <- NULL
+Lend$total_rec_int <- NULL
+Lend$collection_recovery_fee <- NULL
+Lend$policy_code <- NULL
+Lend$collection_12_mths_ex_med <- NULL
+Lend$funded_amnt_inv <- NULL
+Lend$funded_amnt <- NULL
+Lend$out_prncp <- NULL
+Lend$total_rcp_prncp <- NULL
+Lend$recoveries <- NULL
+Lend$last_pymnt_amnt <- NULL
+Lend$total_rec_late_fee <- NULL
+```
+
+**Note that I am removing loan cases from Iowa as there are less than 10 cases total which will throw off my later use of risk by state due to low sample size.**
+
+```{r}
+toBeRemoved<-which(Lend$addr_state=="IA")
+Lend<-Lend[-toBeRemoved,]
+```
+
+
+**Let's look at the data we have left. It appears to be either numerical (54 columns) or factorial (22 columns), although that doesn't tell the whole story. We have numerical data that describe *Dates* such as "earliest_credit", multiple columns describing money amounts, and credit related scores. We have factors describing varibales such as State, Zip Code, and even various descriptions of what the loan is for. Unfortunately, some of the models we will build can not handle factor or categorical data so I will need to restructure those variables into numerical type data, which I will do using logistic regression and then paste the coefficient for each factor as their numerical value. We also have some unstructured data such as the reason for the loan, which may hold very interesting information but will require some parsing**
+
+```{r}
+str(Lend)
+```
+
+
+
+
+
+
+
+
+**I will split the data into two dataframes for right now. One containing all numerical data and one containing all factor data. This will make investigating the numerical data easier in the short term.**
+
+```{r}
+Lend2 <- dplyr::select_if(Lend, is.numeric)
+Lend3 <- dplyr::select_if(Lend, is.factor)
+Lend2$loan_status <- Lend$loan_status
+```
+
+
+
+
+
+**Below we can see the count of how many individuals we have data on in each of the loan_status categories. We want to build a model that predicts whether an individual will pay back their loan or not. This means we only need to keep the *GOOD* "Fully Paid" group and the multiple groups I will consider *BAD* including "Default", "Late (31-120 days)", "Late (16-30 days)"", "Charged Off", and "Does not meet the credit policy. Status: Charged Off". The groups "Current", "In Grace Period", and "Issued" will be removed since they have not completed their term or deemed *BAD*.**
+
+
+```{r}
+# Basic barplot
+p<-ggplot(data=Lend, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+
+
+
+```{r}
+Lend2 <- subset(Lend2, loan_status == "Fully Paid" | loan_status == "Default" | loan_status == "Late (31-120 days)" | loan_status == "Late (16-30 days)" | loan_status == "Charged Off" | loan_status == "Does not meet the credit policy. Status: Charged Off")
+Lend3 <- subset(Lend3, loan_status == "Fully Paid" | loan_status == "Default" | loan_status == "Late (31-120 days)" | loan_status == "Late (16-30 days)" | loan_status == "Charged Off" | loan_status == "Does not meet the credit policy. Status: Charged Off")
+```
+
+
+
+
+**Here we can get a closer look at the data we will be using now that superfluous data is removed.**
+
+```{r}
+
+# Basic barplot
+p<-ggplot(data=Lend2, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+**We will make a model that stringently tries to predict the *GOOD* customers over all the bad categories. We will start by merging the *BAD* categories into one group which will receive the number *1*. The Fully-Paid *GOOD* group will receive the number *0*. We will use these numbers to represent *GOOD* and *BAD* to our predictive models. However, before we make models we will do additional exploratory data analysis.**
+
+
+
+```{r}
+Lend2$loan_status <- ifelse(Lend2$loan_status == "Default" | Lend2$loan_status == "Late (31-120 days)" | Lend2$loan_status == "Late (16-30 days)" | Lend2$loan_status == "Charged Off" | Lend2$loan_status == "Does not meet the credit policy. Status: Charged Off", "bad", "alright")
+Lend2$loan_status <- as.factor(Lend2$loan_status)
+Lend2$loan_status <- as.integer(Lend2$loan_status)-1
+Lend2$loan_status <- as.factor(Lend2$loan_status)
+
+Lend3$loan_status <- ifelse(Lend3$loan_status == "Default" | Lend3$loan_status == "Late (31-120 days)" | Lend3$loan_status == "Late (16-30 days)" | Lend3$loan_status == "Charged Off" | Lend3$loan_status == "Does not meet the credit policy. Status: Charged Off", "bad", "alright")
+Lend3$loan_status <- as.factor(Lend3$loan_status)
+Lend3$loan_status <- as.integer(Lend3$loan_status)-1
+Lend3$loan_status <- as.factor(Lend3$loan_status)
+```
+
+
+
+```{r}
+p<-ggplot(data=Lend2, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+**Here we can see there are about 120,000 *BAD* accounts and 300,000 *GOOD* accounts, which is a higher rate of *BAD* then I've seen previously in other bank data, but you are still theoretically more likely to get a *GOOD* individual. Randomly funding a loan in this case would have an approximate 1 in 4 theoretical chance of being *BAD*. Seen another way, you have an 75% chance of randomly funding a *GOOD* loan, which we will use as the benchmark to beat with our models. **
+
+
+
+
+
+
+**Now let's look for any differences between the groups in regards to their variables. I suspect immediately that the loan ratings between the two groups will be significantly different.**
+
+```{r}
+continous2categorical <- function(x){
+  numberoffactors <- ncol(x)-1
+  out <- data.frame(0,matrix(nrow=nrow(x),ncol=1))
+  for (i in 1:numberoffactors){
+     
+     
+     
+    labs <- c("low", "low-medium", "medium", "medium-high", "high")
+    vartemp <- cut(x[,i], breaks = 5, labels = labs)
+     
+     
+    out[i]<-vartemp
+     
+  }
+  i<- i+1
+  out[i] <- x[i]
+  colnames(out)<-colnames(x)
+  return(data.frame(out))
+}  
+```
+
+
+
+```{r}
+library(ggplot2)
+library(gridExtra)
+catbarchart <- function(x){
+  
+  xcolumnnames <- colnames(x)
+  responsecol <- ncol(x)
+  
+  plot_hist <- function (column, data, response) ggplot(data, aes(x=get(column), ..count..)) +geom_bar(aes(fill=get(response)), position="dodge") + xlab(column) + scale_fill_discrete(name=response)
+  
+  myplots <- lapply(colnames(x), plot_hist, data =x, response=xcolumnnames[responsecol])
+  myplots <- myplots[-length(myplots)]
+  
+  grid.arrange(grobs = myplots, ncol=1)
+  
+}
+```
+
+```{r}
+par(mfrow=c(2,1))
+library(gridExtra)
+Lendgrade <- as.data.frame(cbind(Lend3$grade, Lend3$loan_status))
+Lendgrade$V2 <- as.factor(Lendgrade$V2-1)
+Lendgrade$V1 <- as.numeric(Lendgrade$V1)
+Lendgrade$Risk <- Lendgrade$V1
+Lendgrade$Status <- Lendgrade$V2
+Lendgrade$V1 <- NULL
+Lendgrade$V2 <- NULL
+a = catbarchart(continous2categorical(Lendgrade))
+
+Lendgrade <- as.data.frame(cbind(Lend2$int_rate, Lend2$loan_status))
+Lendgrade$V2 <- as.factor(Lendgrade$V2-1)
+Lendgrade$V1 <- as.numeric(Lendgrade$V1)
+Lendgrade$Interest_Rate <- Lendgrade$V1
+Lendgrade$Status <- Lendgrade$V2
+Lendgrade$V1 <- NULL
+Lendgrade$V2 <- NULL
+b = catbarchart(continous2categorical(Lendgrade))
+
+Lendgrade <- as.data.frame(cbind(Lend3$emp_length, Lend3$loan_status))
+Lendgrade$V2 <- as.factor(Lendgrade$V2-1)
+Lendgrade$V1 <- as.numeric(Lendgrade$V1)
+Lendgrade$Employment_Length <- Lendgrade$V1
+Lendgrade$Status <- Lendgrade$V2
+Lendgrade$V1 <- NULL
+Lendgrade$V2 <- NULL
+c = catbarchart(continous2categorical(Lendgrade))
+
+Lendgrade <- as.data.frame(cbind((Lend2$total_pymnt-Lend2$loan_amnt), Lend2$loan_status))
+Lendgrade$V2 <- as.factor(Lendgrade$V2-1)
+Lendgrade$V1 <- as.numeric(Lendgrade$V1)
+Lendgrade$Profit <- Lendgrade$V1
+Lendgrade$Status <- Lendgrade$V2
+Lendgrade$V1 <- NULL
+Lendgrade$V2 <- NULL
+d = catbarchart(continous2categorical(Lendgrade))
+```
+
+
+
+
+
+```{r}
+Lendgrade <- as.data.frame(cbind((Lend2$total_pymnt-Lend2$loan_amnt), Lend3$grade))
+Lendgrade$V2 <- as.factor(Lendgrade$V2-1)
+Lendgrade$V1 <- as.numeric(Lendgrade$V1)
+Lendgrade$Profit <- Lendgrade$V1
+Lendgrade$Risk <- Lendgrade$V2
+Lendgrade$V1 <- NULL
+Lendgrade$V2 <- NULL
+catbarchart(continous2categorical(Lendgrade))
+```
+
+```{r}
+Lend2$total_pymnt <- NULL
+Lend2$emp_length <- as.numeric(Lend3$emp_length)
+Lend2$FirstCredit <- paste(Lend3$earliest_cr_line)
+Lend2$FirstCredit <- gsub(".*-", "", Lend2$FirstCredit)
+Lend2$FirstCredit <- 2019 - (as.numeric(Lend2$FirstCredit))
+```
+
+
+
+
+
+
+```{r, echo=FALSE}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.7*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~., data=train, family=binomial(link="logit"))
+summary(logitMod)
+```
+
+```{r}
+#After inspection of logistic regression we can remove these variables that are not statistically significant at alpha =0.05.
+Lend2$pct_tl_nvr_dlq <-NULL
+Lend2$num_tl_30dpd <-NULL
+Lend2$num_tl_120dpd_2m <-NULL
+Lend2$num_stats <-NULL
+Lend2$num_bc_tl <-NULL
+Lend2$num_actv_bc_tl <-NULL
+Lend2$mo_sin_rcnt_rev_tl_op <-NULL
+Lend2$chargeoff_within_12_mths <-NULL
+Lend2$bc_open_to_buy <-NULL
+Lend2$tot_cur_bal <-NULL
+Lend2$tot_coll_amt <-NULL
+Lend2$open_acc <-NULL
+Lend2$total_acc <-NULL
+Lend2$num_actv_rev_tl <-NULL
+Lend2$delinq_amnt <-NULL
+Lend2$tax_liens <-NULL
+```
+
+
+
+
+
+
+###Feature Engineering Based on Numerical Data
+
+```{r}
+Lend2$try1 <- Lend2$FirstCredit - Lend2$emp_length
+Lend2$try2 <- Lend2$FirstCredit/Lend2$emp_length
+Lend2$try3 <- Lend2$annual_inc/Lend2$loan_amnt
+Lend2$try4 <- Lend2$annual_inc/Lend2$installment
+Lend2$try5 <- Lend2$pub_rec+Lend2$pub_rec_bankruptcies+Lend2$inq_last_6mths+Lend2$delinq_2yrs
+Lend2$try6 <- (Lend2$annual_inc*((100-Lend2$dti)/100))/Lend2$loan_amnt
+Lend2$try7 <- (Lend2$annual_inc*((100-Lend2$dti)/100))/Lend2$installment
+Lend2$try8 <- (Lend2$emp_length/Lend2$FirstCredit)*Lend2$FirstCredit
+Lend2$try9 <- (Lend2$emp_length/Lend2$FirstCredit)*Lend2$acc_open_past_24mths
+Lend2$try10 <- (Lend2$FirstCredit - Lend2$emp_length)*Lend2$acc_open_past_24mths
+Lend2$try11 <- (Lend2$acc_open_past_24mths+1)/(Lend2$inq_last_6mths+1)
+Lend2$try12 <- (Lend2$tot_hi_cred_lim/(Lend2$annual_inc+1))
+Lend2$try13 <- (Lend2$tot_hi_cred_lim/(Lend2$annual_inc+1))*(Lend2$FirstCredit/(Lend2$emp_length+1))
+```
+
+
+```{r, echo=FALSE}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.7*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+
+
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~., data=train, family=binomial(link="logit"))
+summary(logitMod)
+```
+
+
+
+
+
+```{r}
+#Lend2$id <- NULL
+Lend2$mo_sin_old_rev_tl_op <- NULL
+Lend2$mo_sin_old_il_acct <- NULL
+Lend2$num_tl_op_past_12m <- NULL
+Lend2$try10 <- NULL
+Lend2$member_id <- NULL
+Lend2$try3 <- NULL
+Lend2$try4 <- NULL
+Lend2$try6 <- NULL
+Lend2$try12 <- NULL
+Lend2$try13 <- NULL
+Lend2$try1 <-NULL
+Lend2$try5 <-NULL
+Lend2$try8 <-NULL
+```
+
+**Now we'll make a MARS model (Multivariate Adaptive Regression Splines) to see if we get any different results.**
+
+```{r}
+
+set.seed(123)
+earth <- earth(loan_status~., data = train, degree = 1)
+summary(earth)
+```
+
+
+
+```{r, echo=FALSE}
+library(ROCR)
+p2 <- predict(earth, train, type = 'response')
+ 
+
+p3 <- predict(earth, test, type = 'response')
+ 
+
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf, col='red', lty=1, lwd=3, main = "MARS Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+
+
+
+
+## XGBoost Model
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.70*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r}
+labels <- as.numeric(train$loan_status)
+ts_label <- as.numeric(test$loan_status)
+train$loan_status <- NULL
+test$loan_status <- NULL
+new_tr <- as.matrix(train[1:39]) 
+new_ts <- as.matrix(test[1:39])
+#new_ts <- as.data.frame(new_ts)
+#new_tx <- as.matrix(new_ts)
+#convert factor to numeric 
+labels <- as.numeric(labels-1)
+ts_label <- as.numeric(ts_label-1)
+```
+
+```{r}
+dtrain <- xgb.DMatrix(data = new_tr,label = labels) 
+dtest <- xgb.DMatrix(data = new_ts,label=ts_label)
+```
+
+
+
+```{r}
+#default parameters
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.1, gamma=1, max_depth=3, min_child_weight=1, subsample=1, colsample_bytree=1)
+```
+
+
+
+
+
+```{r}
+set.seed(123)
+xgb1 <- xgb.train (params = params, data = dtrain, nrounds = 100, watchlist = list(val=dtest,train=dtrain), print.every.n = 10, early.stop.round = 20, maximize = T , eval_metric = "auc")
+```
+
+```{r}
+xgb.importance(colnames(train, do.NULL = TRUE, prefix = "col"), model = xgb1)
+```
+
+```{r}
+library("DiagrammeR")
+```
+
+
+```{r}
+library("EIX")
+```
+
+
+
+
+
+
+
+
+
+```{r}
+library("Matrix")
+data <- train[9,]
+new_observation <- new_tr[9,]
+wf<-waterfall(xgb1, new_observation, data, option = "interactions")
+plot(wf)
+```
+
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.70*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r}
+xgbpred <- predict (xgb1,dtest)
+xgbpred <- ifelse (xgbpred > 0.5,1,0)
+p2 <- predict(xgb1, dtrain, type = 'response')
+ 
+
+
+p3 <- predict(xgb1, dtest, type = 'response')
+ 
+#p2 <- ifelse (p2 > 0.5,1,0)
+#p3 <- ifelse (p3 > 0.5,1,0)
+#p2 <-as.data.frame(p2)
+#p3 <- as.data.frame(p3)
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure ="fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf, col='red', lty=1, lwd=3, main = "XGBoost Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+
+
+
+## Turning Factor Data Into Continuous Data
+
+###State Risk
+
+```{r}
+#First we get the coefficients for each state through logistic regression
+set.seed(123)
+logitMod <- glm(loan_status~addr_state, data=Lend3, family=binomial(link="logit"))
+```
+
+
+
+
+```{r}
+library("coefplot")
+#coefplot(logitMod)
+
+coefplot(logitMod, innerCI=2, outerCI=0, intercept=F,
+	title="Logistic Regression of Risk by State", ylab="Predictors",
+	decreasing =F, sort = "magnitude")
+```
+
+```{r}
+DC <- subset(Lend3, addr_state == "DC")
+p<-ggplot(data=DC, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+```{r}
+NE <- subset(Lend3, addr_state == "NE")
+p<-ggplot(data=NE, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+
+
+```{r}
+Lend2$addr_state <- Lend3$addr_state
+Lend2$sub_grade <- Lend3$sub_grade
+Lend2$purpose <- Lend3$purpose
+Lend2$home_ownership <- Lend3$home_ownership
+Lend2$verification_status <- Lend3$verification_status
+Lend2$application_type <- Lend3$application_type
+#This inserts the coefficients from the logistic regression into the dataframe after being matched to their given factor (State)
+StateRisk <- logitMod[["coefficients"]]
+StateRisk <- as.data.frame(StateRisk)
+StateRisk <- cbind(addr_state = rownames(StateRisk), StateRisk)
+rownames(StateRisk) <- 1:nrow(StateRisk)
+StateRisk$addr_state <- gsub("addr_state", "", StateRisk$addr_state)
+StateRisk$addr_state <- gsub(".*Intercept.*", "AK", StateRisk$addr_state)
+StateRisk$addr_state <- as.factor(StateRisk$addr_state)
+Lend2 <- merge(Lend2, StateRisk, "addr_state")
+Lend2$addr_state <- NULL
+```
+
+
+
+###Turning sub_grade into continuous data
+
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~sub_grade, data=Lend3, family=binomial(link="logit"))
+```
+
+```{r}
+coefplot(logitMod)
+GradeRisk <- logitMod[["coefficients"]]
+GradeRisk <- as.data.frame(GradeRisk)
+GradeRisk <- cbind(sub_grade = rownames(GradeRisk), GradeRisk)
+rownames(GradeRisk) <- 1:nrow(GradeRisk)
+GradeRisk$sub_grade <- gsub("sub_grade", "", GradeRisk$sub_grade)
+GradeRisk$sub_grade <- gsub(".*Intercept.*", "A1", GradeRisk$sub_grade)
+GradeRisk$sub_grade <- as.factor(GradeRisk$sub_grade)
+Lend2 <- merge(Lend2, GradeRisk, "sub_grade")
+Lend2$sub_grade <- NULL
+```
+
+
+
+###Making Purpose of Purchase into Continuous Variables
+
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~purpose, data=Lend3, family=binomial(link="logit"))
+```
+
+```{r}
+coefplot(logitMod)
+Purpose <- logitMod[["coefficients"]]
+Purpose <- as.data.frame(Purpose)
+Purpose <- cbind(purpose = rownames(Purpose), Purpose)
+rownames(Purpose) <- 1:nrow(Purpose)
+Purpose$purpose <- gsub("purpose", "", Purpose$purpose)
+Purpose$purpose <- gsub(".*Intercept.*", "car", Purpose$purpose)
+Purpose$purpose <- as.factor(Purpose$purpose)
+Lend2 <- merge(Lend2, Purpose, "purpose")
+Lend2$purpose <- NULL
+```
+
+```{r}
+NE <- subset(Lend3, purpose == "wedding")
+p<-ggplot(data=NE, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+```{r}
+NE <- subset(Lend3, purpose == "small_business")
+p<-ggplot(data=NE, aes(x=loan_status)) +
+  geom_bar(stat="count", width=0.7, fill="steelblue")+
+  theme_minimal()
+
+   
+# Horizontal bar plot
+p + coord_flip()
+```
+
+
+
+###Making Home Ownership into Continuous Variables
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~home_ownership, data=Lend3, family=binomial(link="logit"))
+```
+
+```{r}
+coefplot(logitMod)
+HomeOwnership <- logitMod[["coefficients"]]
+HomeOwnership <- as.data.frame(HomeOwnership)
+HomeOwnership <- cbind(home_ownership = rownames(HomeOwnership), HomeOwnership)
+rownames(HomeOwnership) <- 1:nrow(HomeOwnership)
+HomeOwnership$home_ownership <- gsub("home_ownership", "", HomeOwnership$home_ownership)
+HomeOwnership$home_ownership <- gsub("(.*Intercept.*)", "ANY", HomeOwnership$home_ownership)
+HomeOwnership$home_ownership <- as.factor(HomeOwnership$home_ownership)
+Lend2 <- merge(Lend2, HomeOwnership, "home_ownership")
+Lend2$home_ownership <- NULL
+```
+
+###Making Application Type into Continuous Variables
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~application_type, data=Lend3, family=binomial(link="logit"))
+```
+
+```{r}
+coefplot(logitMod)
+ApplicationType <- logitMod[["coefficients"]]
+ApplicationType <- as.data.frame(ApplicationType)
+ApplicationType <- cbind(application_type = rownames(ApplicationType), ApplicationType)
+rownames(ApplicationType) <- 1:nrow(ApplicationType)
+ApplicationType$application_type <- gsub("application_type", "", ApplicationType$application_type)
+ApplicationType$application_type <- gsub("(.*Intercept.*)", "DIRECT_PAY", ApplicationType$application_type)
+ApplicationType$application_type <- as.factor(ApplicationType$application_type)
+Lend2 <- merge(Lend2, ApplicationType, "application_type")
+Lend2$application_type <- NULL
+```
+
+## Turn verification_status into a continuous variable
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~verification_status, data=Lend3, family=binomial(link="logit"))
+```
+
+```{r}
+coefplot(logitMod)
+VerificationStatus <- logitMod[["coefficients"]]
+VerificationStatus <- as.data.frame(VerificationStatus)
+VerificationStatus <- cbind(verification_status = rownames(VerificationStatus), VerificationStatus)
+rownames(VerificationStatus) <- 1:nrow(VerificationStatus)
+VerificationStatus$verification_status <- gsub("verification_status", "", VerificationStatus$verification_status)
+VerificationStatus$verification_status <- gsub("(.*Intercept.*)", "Not Verified", VerificationStatus$verification_status)
+VerificationStatus$verification_status <- as.factor(VerificationStatus$verification_status)
+Lend2 <- merge(Lend2, VerificationStatus, "verification_status")
+Lend2$verification_status <- NULL
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#temp = step(logitMod)
+#summary(temp)
+```
+
+
+```{r, echo=FALSE}
+set.seed(123)
+Lend2$StateRisk.y <- NULL
+sample <- sample.int(n = nrow(Lend2), size = floor(.7*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+```{r}
+set.seed(123)
+
+logitMod <- glm(loan_status~., family=binomial(link="logit"))
+summary(logitMod)
+```
+
+
+
+
+```{r}
+#summary(temp)
+```
+
+
+```{r, echo=FALSE}
+p2 <- predict(logitMod, train, type = 'response')
+p2 <- as.data.frame(p2)
+
+p3 <- predict(logitMod, test, type = 'response')
+p3 <- as.data.frame(p3)
+
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf,col='red', lty=1, lwd=3, main = "Logistic Regression Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+```{r}
+#test$loan_status <- (as.numeric(test$loan_status)-1)
+#test$loan_status <- as.factor(test$loan_status)
+predictions <- predict(xgb1, dtest, type = 'response')
+predictions <- ifelse(predictions >= .5, 1, 0)
+predictions <- as.factor(predictions)
+confusionMatrix(predictions, test$loan_status)
+```
+
+
+```{r}
+#write the file out
+#write.csv(Lend2, file = "CleanedLendClub.csv")
+```
+
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.70*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r}
+labels <- as.numeric(train$loan_status)
+ts_label <- as.numeric(test$loan_status)
+train$loan_status <- NULL
+test$loan_status <- NULL
+new_tr <- as.matrix(train[1:45]) 
+new_ts <- as.matrix(test[1:45])
+#new_ts <- as.data.frame(new_ts)
+#new_tx <- as.matrix(new_ts)
+#convert factor to numeric 
+labels <- as.numeric(labels-1)
+ts_label <- as.numeric(ts_label-1)
+```
+
+```{r}
+dtrain <- xgb.DMatrix(data = new_tr,label = labels) 
+dtest <- xgb.DMatrix(data = new_ts,label=ts_label)
+```
+
+
+
+
+```{r}
+#default parameters
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.2, gamma=0.1, max_depth=3, min_child_weight=1, subsample=0.8, colsample_bytree=0.7)
+```
+
+
+
+
+
+```{r include=FALSE}
+set.seed(123)
+xgb1 <- xgb.train (params = params, data = dtrain, nrounds = 200, watchlist = list(val=dtest,train=dtrain), print.every.n = 10, early.stop.round = 20, maximize = T , eval_metric = "auc")
+```
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.70*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r, echo=FALSE}
+p2 <- predict(xgb1, dtrain, type = 'prob')
+p2 <- as.numeric(p2)
+
+p3 <- predict(xgb1, dtest, type = 'response')
+p3 <- as.numeric(p3)
+
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf,col='red', lty=1, lwd=3, main = "XGBoost Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+
+
+
+
+
+
+
+```{r}
+set.seed(123)
+earth <- earth(loan_status~., data = train, degree = 1)
+summary(earth)
+```
+
+
+
+```{r, echo=FALSE}
+library(ROCR)
+p2 <- predict(earth, train, type = 'response')
+ 
+
+p3 <- predict(earth, test, type = 'response')
+ 
+
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf, col='red', lty=1, lwd=3, main = "MARS Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+
+
+```{r GAM Model, echo=T}
+set.seed(123)
+RetentionBoost <- gam(loan_status ~s(dti)+(GradeRisk)+s(StateRisk)+(HomeOwnership), data = test, family = binomial) 
+
+#+s(try7)+s(try2)+s(emp_length)+s(total_il_high_credit_limit)+s(total_bal_ex_mort)+(percent_bc_gt_75)+(num_rev_tl_bal_gt_0)+s(num_rev_accts)+s(num_il_tl)+(mort_acc)+(delinq_2yrs)+s(dti)+s(installment)+s(loan_amnt)+(id)
+
+summary(RetentionBoost)
+#+(Credit.Limit)
+```
+
+```{r, echo=FALSE}
+library(ROCR)
+p2 <- predict(RetentionBoost, train, type = 'response')
+ 
+
+p3 <- predict(RetentionBoost, test, type = 'response')
+p2<- as.data.frame(p2) 
+p3<- as.data.frame(p3) 
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf, col='red', lty=1, lwd=3, main = "GAM Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(Lend2), size = floor(.70*nrow(Lend2)), replace = F)
+train <- Lend2[sample, ]
+test  <- Lend2[-sample, ]
+```
+
+
+```{r}
+set.seed(123)
+p1 <- as.data.frame(predict(earth, train, type = 'response'))
+p2 <- as.data.frame(predict(logitMod, train, type = 'response'))
+p3 <- as.data.frame(predict(xgb1, dtrain, type = 'response')) 
+p4 <- as.data.frame(predict(RetentionBoost, train, type = 'response')) 
+
+metalearn <- cbind(p1, p2, p3, p4)
+metalearn$earth <- metalearn$loan_status
+metalearn$loan_status <- NULL
+metalearn$loan_status <- as.numeric(train$loan_status)
+
+
+```
+
+```{r}
+metalearn = as.data.frame(metalearn)
+metalearn$logit = as.numeric(metalearn$`predict(logitMod, train, type = "response")`)
+metalearn$gam = as.numeric(metalearn$`predict(RetentionBoost, train, type = "response")`)
+metalearn$`predict(logitMod, train, type = "response")` <- NULL
+metalearn$`predict(RetentionBoost, train, type = "response")` <- NULL
+meta = as.data.frame(metalearn)
+set.seed(123)
+sample <- sample.int(n = nrow(meta), size = floor(.70*nrow(meta)), replace = F)
+train <- meta[sample, ]
+test  <- meta[-sample, ]
+```
+
+
+```{r}
+labels <- as.numeric(train$loan_status)
+ts_label <- as.numeric(test$loan_status)
+train$loan_status <- NULL
+test$loan_status <- NULL
+new_tr <- as.matrix(train[1:4]) 
+new_ts <- as.matrix(test[1:4])
+#new_ts <- as.data.frame(new_ts)
+#new_tx <- as.matrix(new_ts)
+#convert factor to numeric 
+labels <- as.numeric(labels-1)
+ts_label <- as.numeric(ts_label-1)
+```
+
+```{r}
+dtrain2 <- xgb.DMatrix(data = new_tr,label = labels) 
+dtest2 <- xgb.DMatrix(data = new_ts,label=ts_label)
+```
+
+
+
+```{r}
+#default parameters
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.1, gamma=0.3, max_depth=2, min_child_weight=1, subsample=1, colsample_bytree=1)
+```
+
+
+
+```{r include=FALSE}
+set.seed(123)
+xgb2 <- xgb.train (params = params, data = dtrain2, nrounds = 100, watchlist = list(val=dtest2,train=dtrain2), print.every.n = 10, early.stop.round = 20, maximize = T , eval_metric = "auc")
+```
+
+
+
+
+```{r}
+set.seed(123)
+sample <- sample.int(n = nrow(meta), size = floor(.70*nrow(meta)), replace = F)
+train <- meta[sample, ]
+test  <- meta[-sample, ]
+p2 <- predict(xgb2, dtrain2, type = 'prob')
+p2 <- as.numeric(p2)
+
+p3 <- predict(xgb2, dtest2, type = 'response')
+p3 <- as.numeric(p3)
+
+
+pred1 <- prediction(p2, train$loan_status)
+class(pred1)
+roc.perf = ROCR::performance(pred1, measure = "tpr", x.measure = "fpr")
+
+pred2 <- prediction(p3, test$loan_status)
+roc.perf2 = ROCR::performance(pred2, measure = "tpr", x.measure = "fpr")
+
+plot(roc.perf,col='red', lty=1, lwd=3, main = "XGBoost Model")
+abline(a=0, b= 1)
+
+plot(roc.perf2, add=TRUE, lty=1, lwd=3)
+#roc.perf
+
+
+auctest <- ROCR::performance(pred2,"auc")
+auctrain <- ROCR::performance(pred1,"auc")
+# now converting S4 class to vector
+auctest <- unlist(slot(auctest, "y.values"))
+auctrain <- unlist(slot(auctrain, "y.values"))
+# adding min and max ROC AUC to the center of the plot
+auctest<-mean(round(auctest, digits = 3))
+auctrain<-mean(round(auctrain, digits = 3))
+minauct <- paste(c("Train (AUC)  = "), auctrain,sep="")
+maxauct <- paste(c("Test (AUC) = "),auctest,sep="")
+legend(0.62,0.6,c(maxauct),border="white",cex=1.2,box.col = "white", text.col = "black")
+legend(0.61,0.4,c(minauct),border="white",cex=1.2,box.col = "white", text.col = "red")
+```
+
+```{r}
+#test$loan_status <- (as.numeric(test$loan_status)-1)
+#test$loan_status <- as.factor(test$loan_status)
+predictions <- predict(xgb2, dtest2, type = 'response')
+predictions <- ifelse(predictions >= .1, 1, 0)
+predictions <- as.factor(predictions)
+confusionMatrix(predictions, as.factor(test$loan_status-1))
+```
+
+```{r}
+z <-cbind(p3, test$loan_status)
+z <- as.data.frame(z)
+z$V2 <- z$V2-1
+library(gains)
+
+par(mfrow=c(1,1.5))
+par(mar=c(5, 4, 4, 6) + 0.1)
+dt2 <- gains( z$V2, z$p3, groups=10, optimal=F)
+plot(dt2$depth, dt2$cume.lift, type="l", ylab="Cumulative lift", xlab="Bucket", main = "Cumulative Lift and Response")
+par(new = TRUE)
+plot(dt2$depth, dt2$cume.pct.of.total, type = "l",col="red", axes = FALSE, bty = "n", xlab = "", ylab = "")
+axis(side=4, at = pretty(range(dt2$cume.pct.of.total)))
+mtext("Cumulative Response",side=4,col="red",line=2) 
+legend("right",legend=c("Cumulative \n Lift","Cumulative \n Response"),
+       text.col=c("black","red"),pch=c(16,16), col=c("black","red"))
+
+
+lines(dt2$depth, dt2$cume.pct.of.total, type="l",col="red")
+#graphics::plot(dt2$depth, dt2$cume.pct.of.total, type="l", ylab="Cumulative lift", xlab="Bucket")
+dt2
+
+```
+
+
+
+
+```{r}
+
+continous2categorical <- function(x){
+  numberoffactors <- ncol(x)-1
+  out <- data.frame(0,matrix(nrow=nrow(x),ncol=1))
+  for (i in 1:numberoffactors){
+     
+     
+     
+    labs <- c("10", "20", "30", "40", "50", "60", "70", "80", "90", "100")
+    vartemp <- cut(x[,i], breaks = 10, labels = labs)
+     
+     
+    out[i]<-vartemp
+     
+  }
+  i<- i+1
+  out[i] <- x[i]
+  colnames(out)<-colnames(x)
+  return(data.frame(out))
+}
+
+
+catbarchart <- function(x){
+  
+  xcolumnnames <- colnames(x)
+  responsecol <- ncol(x)
+  
+  plot_hist <- function (column, data, response) ggplot(data, aes(x=get(column), ..count..)) +geom_bar(aes(fill=get(response)), position="dodge") + xlab(column) + scale_fill_discrete(name=response)
+  
+  myplots <- lapply(colnames(x), plot_hist, data =x, response=xcolumnnames[responsecol])
+  myplots <- myplots[-length(myplots)]
+  
+  grid.arrange(grobs = myplots, ncol=1)
+  
+}
+
+
+
+z$Score <- (1-z$p3)*100
+z$`Loan Default` <- as.factor(z$V2)
+z$p3 <- NULL
+z$V2 <- NULL
+catbarchart(continous2categorical(z))
+```
+
+
+
+
+
+
+
+
